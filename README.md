@@ -1,9 +1,12 @@
 # PlateTectonicTools
+
 Python tools for plate tectonic research.
 
-A collection of Python code to access plate tectonic functionality (primarily built on top of the existing [pyGPlates](http://gplates.org/docs/pygplates/index.html) library).
+This repository contains the Python package **ptt** (short for Plate Tectonic Tools) which provides a collection of common plate tectonic functionality that researchers can use in their workflows. It is primarily built on top of the [pyGPlates](http://gplates.org/docs/pygplates/index.html) Python library.
 
-Currently there are a couple of Jupyter notebooks to demonstrate:
+There are also a couple of Jupyter notebooks to demonstrate usage of the **ptt** package:
 
 * Calculating average seafloor spreading rates of mid-ocean ridges
-* Calculating subducting rate of paleo rasters at each age by sampling reconstructed rasters along subduction zones
+* Calculating subducting rate of paleo rasters along subduction zones
+
+*Note:* This repository is only in its initial stages. More functionality and examples will be provided in future.
