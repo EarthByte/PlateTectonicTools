@@ -1,0 +1,140 @@
+#### GPML Tools ####
+
+# Description:  Sequentially filters all features within GPML data files by user defined search parameters.
+
+# Usage:        Currently can only be used from within python. Either add it to your PYTHONPATH or copy
+#               GPMLTools.py to working folder.
+
+#               import GPMLTools
+#               GPMLTools.filterGPML(args)
+
+
+# Basic Arguments (args):
+
+#       Name:   Input file name
+#       Desc:   Filename for GPML data input file (the file to be filtered)
+#       var:    inputFile
+#       Type:   string
+#       Usage:  inputFile="myInputFile.gpml" - can be relative path to GPMLTools.py
+
+#       Name:   Output file name
+#       Desc:   Filename to be saved containing filtered data. Only use if GPML file is required. All files are by
+#               default saved to an "output" folder generated in the same folder as GPMLTools.py
+#       var:    outputFile
+#       Type:   string
+#       Usage:  outputFile="myOutputFile.gpml"
+
+#       Name:   Filter sequence
+#       Desc:   Describes the sequential order of the specified filters to process data. Each subsequent filter added
+#               to this list treats the output from the immediately previous filter as its input data. Filters can be
+#               added to filterSequence in any order and more than once. Each filter (listed below) can be called by
+#               its filter number (e.g. [1] is Reconstruction plate ID, and [2] is Conjugate plate ID).
+#       var:    filterSequence
+#       Type:   list of integers (length = inf)
+#       Usage:  filterSequence=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].
+
+
+# Filter types (numbered) and usage:
+
+# Inverse filtering is now possible for both reconstruction (rPlateID) and conjugate (cPLateID) searches. This filter will return all features with plateIDs that are NOT found within the input array. Default is False (no need to ever include this in parameters).
+
+
+# 1.    Name:   Reconstruction plate ID
+#       var:    rPlateID
+#       Type:   list of integers (length = inf)
+#       Usage:  Single parameter:   rPlateID=[801]
+#               Multi parameter:    rPlateID=[801,701,101]
+#				Inverse:			inverse=True
+
+# 2.    Name:   Conjugate plate ID
+#       var:    cPlateID
+#       Type:   list of integers (length = inf)
+#       Usage:  Single parameter:   cPlateID=[801]
+#               Multi parameter:    cPlateID=[801,701,101]
+#				Inverse:			inverse=True
+
+# 3.    Name:   Age of appearance window
+#       Desc:   Finds features the appear within (and including) a specified time period or 'window'.
+#               Age windows are defined [oldest, youngest]. Values can be integers or floats.
+#       var:    ageAppearWindow
+#       Type:   list of integers or floats (length = 2)
+#       Usage:  ageAppearWindow=[oldest, youngest]
+
+# 4.    Name:   Age of disappearance window
+#       Desc:   Finds features that disappear within (and including) a specified time period or 'window'.
+#               Age windows are defined [oldest, youngest]. Values can be integers or floats.
+#       var:    ageDisappearWindow
+#       Type:   list of integers or floats (length = 2)
+#       Usage:  ageDisappearWindow=[oldest, youngest]
+
+# 5.    Name:   Age of existence window
+#       Desc:   Finds features that exists within (and including) a specified time period or 'window'.
+#               Age windows are defined [oldest, youngest]. Values can be integers or floats.
+#       var:    ageExistsWindow
+#       Type:   list of integers or floats (length = 2)
+#       Usage:  ageExistsWindow=[oldest, youngest]
+
+# 6.    Name:   Geographic bounding box
+#       Desc:   Finds all features that are located all or in part within the specified geographic bounding box.
+#               Bounding boxes are defined [Longitude 1, Longitude 2, Latitude 1, Latitude 2]. Longitude 1 is the
+#               easternmost limit (max 0), Longitude 2 is the westernmost limit (max 360), Latitude 1 is the
+#               southernmost limit (max -90), and Latitude 2 is the northernmost limit (max 90)of geographic region.
+#               Values are in degrees.
+#       var:    boundingBox
+#       Type:   list of integers or floats (length = 4)
+#       Usage:  boundingBox=[0, 360, -90, 90]
+
+# 7.    Name:   Feature type
+#       Desc:   Finds all features of specified feature type. Currently supported feature types:
+#                   "ISO" (Isochron)
+#                   "MOR" (Mid-ocean ridge)
+#                   "PCB" (PassiveContinentalBoundary)
+#                   - others will be added in over time or upon request!
+#               A wildcard search can be performed using "ALL", which returns all of the above feature types.
+#       var:    featureType
+#       Type:   list of strings (length = inf)
+#       Usage:  Single parameter:   featureType=["ISO"]
+#               Multi parameter:    featureType=["ISO", "MOR", "PCB"]
+
+# 8.    Name:   Geometry type
+#       Desc:   Finds all features of a specified geometry type. Currently supported geometry types:
+#                   "PointOnSphere"
+#                   "MultiPointOnSphere"
+#                   "PolyLineOnSphere"
+#                   "PolygonOnSphere"
+#               A wildcard search can be performed using "ALL", which returns all of the above geometry types.
+#       var:    geometryType
+#       Type:   list of strings (length = inf)
+#       Usage:  Single parameter:   geometryType=["PointOnSphere"]
+#               Multi parameter:    geometryType=["PointOnSphere", "MultiPointOnSphere", "PolyLineOnSphere"]
+
+# 9.    Name:   Feature ID
+#       Desc:   Finds all features with specified feature ID. ID's are case insensitive.
+#       var:    featureID
+#       Type:   string
+#       Usage:  featureID="GPlates-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# 10.   Name:   Feature name
+#       Desc:   Finds all features containing some or all of specified feature name string. Names are case insensitive.
+#       var:    featureName
+#       Type:   list of strings (length = inf)
+#       Usage:  Single parameter:   featureName=["name1"]
+#               Multi parameter:    featureName=["name1", "name2", "name3"]
+
+
+##### Examples filter queries #####
+
+#   Example 1:  Filter for features with reconstruction plate IDs [801, 701] that appear between 60 - 50 Ma within the bounding box
+#               long 100 - long 130 and lat -90 and lat 20.
+
+#               GPMLTools.filterGPML(inputFile=inputFile, filterSequence=[1, 3, 5], rPlateID=[801], ageAppearWindow=[60, 50], boundingBox=[100, 130, -90, 20])
+
+
+#   Example 2:  Filter for features that existed between 100 - 90 Ma that have feature names containing either "pacific", "cocos", or "australia".
+
+#               GPMLTools.filterGPML(inputFile=inputFile, outputFile=outputFile, filterSequence=[6, 10], ageExistsWindow=[100, 90], featureName=["pacific", "cocos", "australia"])
+
+
+#   Example 3:  Filter for features of all feature types with a feature geometry of "PolylineOnSphere" and with a conjugate plate ID of 101.
+
+#               GPMLTools.filterGPML(inputFile=inputFile, outputFile=outputFile, filterSequence=[7, 8, 2], featureType=["ALL"], geometryType=["PolylineOnSphere"], cPlateID=[101])
