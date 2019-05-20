@@ -43,17 +43,31 @@ def remove_plates(
     Any rotations with a fixed plate referencing one of the removed plates will be adjusted such that
     the rotation model effectively remains unchanged.
     
-    Ensure you specify all input rotation feature collections that contain the plate IDs to be removed (either as a moving or fixed plate ID).
+    The results are returned as a list of pygplates.FeatureCollection (one per input rotation feature collection).
     
-    The results are written back to the input rotation feature collections.
+    Ensure you specify all input rotation feature collections that contain the plate IDs to be removed (either as a moving or fixed plate ID).
     
     Parameters
     ----------
-    rotation_feature_collections : sequence of pygplates.FeatureCollection
-        Rotation feature collections.
+    rotation_feature_collections : sequence of (str, or sequence of pygplates.Feature, or pygplates.FeatureCollection, or pygplates.Feature)
+        A sequence of rotation feature collections.
+        Each collection in the sequence can be a rotation filename, or a sequence (eg, list of tuple) or features, or
+        a feature collection, or even a single feature.
     plate_ids : sequence of int
         Plate IDs to remove from rotation model.
+    
+    Returns
+    -------
+    list of pygplates.FeatureCollection
+        The (potentially) modified feature collections.
+        Returned list is same length as ``rotation_feature_collections``.
     """
+    
+    # Convert each feature collection into a list of features so we can more easily remove features
+    # and insert features at arbitrary locations within each feature collection (for example removing
+    # a plate sequence and replacing it with a sequence with the same plate ID).
+    rotation_feature_collections = [list(pygplates.FeatureCollection(rotation_feature_collection))
+        for rotation_feature_collection in rotation_feature_collections]
     
     # Rotation model before any modifications to rotation features.
     #
@@ -67,12 +81,10 @@ def remove_plates(
         # Rotation sequences with the current remove plate ID as the *moving* plate ID.
         # Each sequence will have a different *fixed* plate ID.
         remove_plate_sequences = []
-        # Rotation sequences with the current remove plate ID as the *fixed* plate ID.
-        # Each sequence will have a different *moving* plate ID.
-        child_remove_plate_sequences = []
         for rotation_feature_collection in rotation_feature_collections:
-            remove_features_from_collection = []
-            for rotation_feature in rotation_feature_collection:
+            rotation_feature_index = 0
+            while rotation_feature_index < len(rotation_feature_collection):
+                rotation_feature = rotation_feature_collection[rotation_feature_index]
                 total_reconstruction_pole = rotation_feature.get_total_reconstruction_pole()
                 if total_reconstruction_pole:
                     fixed_plate_id, moving_plate_id, rotation_sequence = total_reconstruction_pole
@@ -81,18 +93,34 @@ def remove_plates(
                             for sample in rotation_sequence.get_enabled_time_samples()]
                         remove_plate_sequences.append(
                             (fixed_plate_id, sample_times))
-                        # This rotation feature will no longer be needed.
-                        remove_features_from_collection.append(rotation_feature)
-                    elif fixed_plate_id == remove_plate_id:
+                        # Remove plate sequences whose moving plate is the current remove plate.
+                        # Note that this won't affect 'rotation_model' (since it used a cloned version of all features).
+                        del rotation_feature_collection[rotation_feature_index]
+                        rotation_feature_index -= 1
+                
+                rotation_feature_index += 1
+        
+        # Rotation sequences with the current remove plate ID as the *fixed* plate ID.
+        # Each sequence will have a different *moving* plate ID.
+        child_remove_plate_sequences = []
+        for rotation_feature_collection in rotation_feature_collections:
+            rotation_feature_index = 0
+            while rotation_feature_index < len(rotation_feature_collection):
+                rotation_feature = rotation_feature_collection[rotation_feature_index]
+                total_reconstruction_pole = rotation_feature.get_total_reconstruction_pole()
+                if total_reconstruction_pole:
+                    fixed_plate_id, moving_plate_id, rotation_sequence = total_reconstruction_pole
+                    if fixed_plate_id == remove_plate_id:
                         child_remove_plate_sequences.append(
                             (moving_plate_id, rotation_sequence.get_time_samples(), rotation_feature, rotation_feature_collection))
                         # This rotation feature will no longer be needed.
-                        # It'll get replaced below.
-                        remove_features_from_collection.append(rotation_feature)
-            
-            # Remove the plate sequences whose moving or fixed plate is the current remove plate.
-            # Note that this won't affect 'rotation_model' (since it used a cloned version of all features).
-            rotation_feature_collection.remove(remove_features_from_collection)
+                        # Remove plate sequences whose fixed plate is the current remove plate.
+                        # This will get replaced below.
+                        # Also note that this won't affect 'rotation_model' (since it used a cloned version of all features).
+                        del rotation_feature_collection[rotation_feature_index]
+                        rotation_feature_index -= 1
+                
+                rotation_feature_index += 1
         
         # Iterate over the sequences that need adjustment due to the plate removal.
         # These are sequences whose fixed plate is the plate currently being removed.
@@ -174,7 +202,11 @@ def remove_plates(
                     
                     # Add new rotation feature to the same feature collection that
                     # 'child_remove_plate_rotation_feature' was removed from.
-                    rotation_feature_collection.add(parent_to_child_rotation_feature)
+                    rotation_feature_collection.append(parent_to_child_rotation_feature)
+    
+    # Return our (potentially) modified feature collections as a list of pygplates.FeatureCollection.
+    return [pygplates.FeatureCollection(rotation_feature_collection)
+        for rotation_feature_collection in rotation_feature_collections]
 
 
 if __name__ == '__main__':
@@ -230,17 +262,17 @@ if __name__ == '__main__':
         args = parser.parse_args()
         
         # Read the input rotation feature collections.
-        rotation_feature_collections = [pygplates.FeatureCollection(input_rotation_filename)
+        input_rotation_feature_collections = [pygplates.FeatureCollection(input_rotation_filename)
                 for input_rotation_filename in args.input_rotation_filenames]
         
         # Remove plate rotations.
-        remove_plates(
-                rotation_feature_collections,
+        output_rotation_feature_collections = remove_plates(
+                input_rotation_feature_collections,
                 args.plate_ids)
         
         # Write the modified rotation feature collections to disk.
-        for rotation_feature_collection_index in range(len(rotation_feature_collections)):
-            rotation_feature_collection = rotation_feature_collections[rotation_feature_collection_index]
+        for rotation_feature_collection_index in range(len(output_rotation_feature_collections)):
+            output_rotation_feature_collection = output_rotation_feature_collections[rotation_feature_collection_index]
 
             # Each output filename is the input filename with an optional prefix prepended.
             input_rotation_filename = args.input_rotation_filenames[rotation_feature_collection_index]
@@ -250,7 +282,7 @@ if __name__ == '__main__':
             else:
                 output_rotation_filename = input_rotation_filename
             
-            rotation_feature_collection.write(output_rotation_filename)
+            output_rotation_feature_collection.write(output_rotation_filename)
         
         sys.exit(0)
     
