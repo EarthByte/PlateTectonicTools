@@ -251,6 +251,16 @@ def remove_plates(
                         rotation_feature_index -= 1
                         
                 rotation_feature_index += 1
+        
+        # Note that we don't join rotation sequences having the same moving/fixed plates.
+        # However they will show up as a 'duplicate geo-time' warning when loading into GPlates.
+        # TODO: Remove duplicate geo-times and join the offending rotation sequences.
+        #
+        # Details: It's possible that a sequence having a crossover (really two sequences with same moving
+        # plate but different fixed plates) can have one of its fixed plates removed and hence replaced
+        # by the fixed plate of the removed sequence. In this situation the original crossover sequence
+        # (really two sequences) could now have the same fixed plate ID, and since it also has the
+        # same moving plate ID it should really be one sequence.
     
     # Return our (potentially) modified feature collections as a list of pygplates.FeatureCollection.
     return [pygplates.FeatureCollection(rotation_feature_collection)
