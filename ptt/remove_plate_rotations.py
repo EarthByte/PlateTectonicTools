@@ -145,12 +145,10 @@ def remove_plates(
                             # Find the time overlap of the removed sequence and the (child) sequence requiring modification.
                             min_sample_time = max(remove_plate_min_sample_time, child_remove_plate_min_sample_time)
                             if remove_plate_sequence_index == len(remove_plate_sequences) - 1:
-                                is_last_remove_plate_sequence = True
                                 # We want the last remove plate sequence to go back to the child max sample time.
                                 # If it doesn't go that far back then we will artificially extend the remove plate sequence that far back.
                                 max_sample_time = child_remove_plate_max_sample_time
                             else:
-                                is_last_remove_plate_sequence = False
                                 max_sample_time = min(remove_plate_max_sample_time, child_remove_plate_max_sample_time)
                             
                             # Note that the remove sequences are ordered by time (ie, first sequence should start at 0Ma, etc).
@@ -175,58 +173,15 @@ def remove_plates(
                                 sample_times.sort()
                                 
                                 # Gather the rotation samples from the child's moving plate to the removed plate's fixed plate.
-                                parent_to_child_rotation_samples = []
-                                for sample_time in sample_times:
-                                    # Rotation from parent to remove-plate is now replaced by rotation from
-                                    # (parent of remove-plate) to (child of remove-plate).
-                                    #
-                                    #   R(0->t,parent_plate->child_plate) = R(0->t,parent_plate->remove_plate) * R(0->t,remove_plate->child_plate)
-                                    #
-                                    # Also note that below we set fixed plate as the 'anchor_plate_id' argument to pygplates.RotationModel.get_rotation(),
-                                    # not the 'fixed_plate_id' argument, in case there is no plate circuit path to anchor plate 000.
-                                    # This also means the user doesn't have to load all rotations in the model,
-                                    # only those that have the remove plate IDs as a moving or fixed plate.
-                                    
-                                    if (is_last_remove_plate_sequence and
-                                        sample_time > remove_plate_max_sample_time):
-                                        # The time span of the (oldest) removed plate sequence is too short, so extend its oldest sample further into
-                                        # the past (ie, assume a constant rotation). We do this by calculating R(0->t,parent_plate->remove_plate)
-                                        # at the max sample time of remove plate sequence instead of the current sample time.
-                                        #
-                                        # Note that the remove sequences are ordered by time (ie, first sequence should start at 0Ma, etc).
-                                        # So 'max_sample_time' should be the oldest time of the oldest removed plate sequence.
-                                        
-                                        # R(0->t,parent_plate->remove_plate)
-                                        parent_to_remove_rotation = rotation_model.get_rotation(
-                                            # Note the time is 'remove_plate_max_sample_time' and not 'sample_time'...
-                                            remove_plate_max_sample_time, remove_plate_id, anchor_plate_id=parent_remove_plate_id)
-                                        # R(0->t,remove_plate->child_plate)
-                                        remove_to_child_rotation = rotation_model.get_rotation(
-                                            sample_time, child_remove_plate_id, anchor_plate_id=remove_plate_id)
-                                        
-                                        parent_to_child_rotation = parent_to_remove_rotation * remove_to_child_rotation
-                                    else:
-                                        # Note that here we don't actually need to compose rotations as in the above equation because both rotations
-                                        # are at the same (sample) time so we can just get pygplates.RotationModel.get_rotation() to compose them for us.
-                                        #
-                                        # R(0->t,parent_plate->child_plate)
-                                        parent_to_child_rotation = rotation_model.get_rotation(
-                                            sample_time, child_remove_plate_id, anchor_plate_id=parent_remove_plate_id)
-                                    
-                                    # If the sample time corresponds to an existing sample then use it's description,
-                                    # otherwise create a new sample description noting that the new sample is due to
-                                    # the removal of a specific fixed plate.
-                                    if sample_time in child_remove_plate_sample_times:
-                                        child_remove_plate_sample = child_remove_plate_samples[child_remove_plate_sample_times.index(sample_time)]
-                                        sample_description = child_remove_plate_sample.get_description()
-                                    else:
-                                        sample_description = 'Removed fixed plate {0}'.format(remove_plate_id)
-                                    
-                                    parent_to_child_rotation_samples.append(
-                                        pygplates.GpmlTimeSample(
-                                            pygplates.GpmlFiniteRotation(parent_to_child_rotation),
-                                            sample_time,
-                                            sample_description))
+                                parent_to_child_rotation_samples = _merge_rotation_samples(
+                                    rotation_model,
+                                    child_remove_plate_id,
+                                    remove_plate_id,
+                                    parent_remove_plate_id,
+                                    child_remove_plate_samples,
+                                    child_remove_plate_sample_times,
+                                    sample_times,
+                                    remove_plate_max_sample_time)
                                 
                                 # Create a new rotation sequence.
                                 parent_to_child_rotation_feature = pygplates.Feature.create_total_reconstruction_sequence(
@@ -265,6 +220,73 @@ def remove_plates(
     # Return our (potentially) modified feature collections as a list of pygplates.FeatureCollection.
     return [pygplates.FeatureCollection(rotation_feature_collection)
         for rotation_feature_collection in rotation_feature_collections]
+
+
+def _merge_rotation_samples(
+        rotation_model,
+        child_remove_plate_id,
+        remove_plate_id,
+        parent_remove_plate_id,
+        child_remove_plate_samples,
+        child_remove_plate_sample_times,
+        sample_times,
+        remove_plate_max_sample_time):
+    """Gather the rotation samples from the child's moving plate to the removed plate's fixed plate."""
+    
+    # Gather the rotation samples from the child's moving plate to the removed plate's fixed plate.
+    parent_to_child_rotation_samples = []
+    for sample_time in sample_times:
+        # Rotation from parent to remove-plate is now replaced by rotation from
+        # (parent of remove-plate) to (child of remove-plate).
+        #
+        #   R(0->t,parent_plate->child_plate) = R(0->t,parent_plate->remove_plate) * R(0->t,remove_plate->child_plate)
+        #
+        # Also note that below we set fixed plate as the 'anchor_plate_id' argument to pygplates.RotationModel.get_rotation(),
+        # not the 'fixed_plate_id' argument, in case there is no plate circuit path to anchor plate 000.
+        # This also means the user doesn't have to load all rotations in the model,
+        # only those that have the remove plate IDs as a moving or fixed plate.
+        
+        if sample_time > remove_plate_max_sample_time:
+            # The time span of the (oldest) removed plate sequence is too short, so extend its oldest sample further into
+            # the past (ie, assume a constant rotation). We do this by calculating R(0->t,parent_plate->remove_plate)
+            # at the max sample time of remove plate sequence instead of the current sample time.
+            #
+            # Note that the remove sequences are ordered by time (ie, first sequence should start at 0Ma, etc).
+            # So 'max_sample_time' should be the oldest time of the oldest removed plate sequence.
+            
+            # R(0->t,parent_plate->remove_plate)
+            parent_to_remove_rotation = rotation_model.get_rotation(
+                # Note the time is 'remove_plate_max_sample_time' and not 'sample_time'...
+                remove_plate_max_sample_time, remove_plate_id, anchor_plate_id=parent_remove_plate_id)
+            # R(0->t,remove_plate->child_plate)
+            remove_to_child_rotation = rotation_model.get_rotation(
+                sample_time, child_remove_plate_id, anchor_plate_id=remove_plate_id)
+            
+            parent_to_child_rotation = parent_to_remove_rotation * remove_to_child_rotation
+        else:
+            # Note that here we don't actually need to compose rotations as in the above equation because both rotations
+            # are at the same (sample) time so we can just get pygplates.RotationModel.get_rotation() to compose them for us.
+            #
+            # R(0->t,parent_plate->child_plate)
+            parent_to_child_rotation = rotation_model.get_rotation(
+                sample_time, child_remove_plate_id, anchor_plate_id=parent_remove_plate_id)
+        
+        # If the sample time corresponds to an existing sample then use its description,
+        # otherwise create a new sample description noting that the new sample is due to
+        # the removal of a specific fixed plate.
+        if sample_time in child_remove_plate_sample_times:
+            child_remove_plate_sample = child_remove_plate_samples[child_remove_plate_sample_times.index(sample_time)]
+            sample_description = child_remove_plate_sample.get_description()
+        else:
+            sample_description = 'Removed fixed plate {0}'.format(remove_plate_id)
+        
+        parent_to_child_rotation_samples.append(
+            pygplates.GpmlTimeSample(
+                pygplates.GpmlFiniteRotation(parent_to_child_rotation),
+                sample_time,
+                sample_description))
+    
+    return parent_to_child_rotation_samples
 
 
 if __name__ == '__main__':
