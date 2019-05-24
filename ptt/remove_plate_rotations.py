@@ -24,6 +24,7 @@
 
 from __future__ import print_function
 import sys
+import math
 import pygplates
 
 
@@ -35,7 +36,7 @@ PYGPLATES_VERSION_REQUIRED = pygplates.Version(12)
 def remove_plates(
         rotation_feature_collections,
         plate_ids,
-        accuracy_thresholds=None):
+        accuracy_parameters=None):
     # Docstring in numpydoc format...
     """Remove one or more plate IDs from a rotation model (consisting of one or more rotation feature collections).
     
@@ -57,8 +58,9 @@ def remove_plates(
         a feature collection, or even a single feature.
     plate_ids : sequence of int
         Plate IDs to remove from rotation model.
-    accuracy_thresholds: 2-tuple of float, optional
-        First parameter is the threshold rotation accuracy (in degrees) and the second parameter is the threshold time interval.
+    accuracy_parameters: tuple of (float, float, bool), optional
+        First parameter is the threshold rotation accuracy (in degrees), the second parameter is the threshold time interval and
+        the third parameter is True if insert poles should have times that are integer multiples of the threshold time interval.
         The first parameter is used to compare the latitude, longitude and angle of two rotations before and after removing a plate rotation.
         If any of those three parameters differ by more than the rotation accuracy (in degrees) then
         samples at times mid-way between samples are inserted to ensure before/after accuracy of rotations.
@@ -194,8 +196,8 @@ def remove_plates(
                                     remove_plate_max_sample_time)
                                 
                                 # Insert new samples at times where the difference between original and new rotation models exceeds a threshold.
-                                if accuracy_thresholds is not None:
-                                    threshold_rotation_accuracy_degrees, threshold_time_interval = accuracy_thresholds
+                                if accuracy_parameters is not None:
+                                    threshold_rotation_accuracy_degrees, threshold_time_interval, use_uniform_accuracy_times = accuracy_parameters
                                     _ensure_sequence_accuracy(
                                         rotation_model,
                                         parent_to_child_rotation_samples,
@@ -204,7 +206,8 @@ def remove_plates(
                                         parent_remove_plate_id,
                                         remove_plate_max_sample_time,
                                         threshold_rotation_accuracy_degrees,
-                                        threshold_time_interval)
+                                        threshold_time_interval,
+                                        use_uniform_accuracy_times)
                                 
                                 # Create a new rotation sequence.
                                 parent_to_child_rotation_feature = pygplates.Feature.create_total_reconstruction_sequence(
@@ -320,66 +323,119 @@ def _ensure_sequence_accuracy(
         parent_remove_plate_id,
         remove_plate_max_sample_time,
         threshold_rotation_accuracy_degrees,
-        threshold_time_interval):
+        threshold_time_interval,
+        insert_poles_at_integer_multiples_of_time_interval):
     """Insert new samples at times where the difference between original and new rotation models exceeds a threshold."""
     
-    sample_pair_stack = []
-    
     num_original_samples = len(parent_to_child_rotation_samples)
+
+    sample_pair_stack = []
     
     # Add the stage rotation intervals to the stack for later processing.
     for sample_index in range(num_original_samples-1):
         sample1, sample2 = parent_to_child_rotation_samples[sample_index], parent_to_child_rotation_samples[sample_index + 1]
-        if sample2.get_time() - sample1.get_time() > threshold_time_interval:
+        sample_time1, sample_time2 = sample1.get_time(), sample2.get_time()
+        if pygplates.GeoTimeInstant(sample_time2 - sample_time1) > threshold_time_interval:
             sample_pair_stack.append((sample1, sample2))
     
     # Process the stage rotation intervals on the stack until it is empty.
     while sample_pair_stack:
         sample1, sample2 = sample_pair_stack.pop()
         sample_time1, sample_time2 = sample1.get_time(), sample2.get_time()
+        
         mid_sample_time = 0.5 * (sample_time1 + sample_time2)
         
-        # Find the *original* rotation from parent plate to child plate (through removed plate).
-        #
-        # R(0->t,parent_plate->remove_plate)
-        parent_to_remove_rotation = rotation_model.get_rotation(
-            # If the time span of the (oldest) removed plate sequence is too short then extend its oldest rotation to the mid-sample time...
-            min(mid_sample_time, remove_plate_max_sample_time), remove_plate_id, anchor_plate_id=parent_remove_plate_id)
-        # R(0->t,remove_plate->child_plate)
-        remove_to_child_rotation = rotation_model.get_rotation(
-            mid_sample_time, child_remove_plate_id, anchor_plate_id=remove_plate_id)
-        original_parent_to_child_rotation = parent_to_remove_rotation * remove_to_child_rotation
+        if insert_poles_at_integer_multiples_of_time_interval:
+            # Round to the nearest uniformly spaced interval.
+            interpolated_sample_time = threshold_time_interval * math.floor((mid_sample_time / threshold_time_interval) + 0.5)
+            if interpolated_sample_time > mid_sample_time:
+                if interpolated_sample_time >= pygplates.GeoTimeInstant(sample_time2):
+                    # We rounded up and the time was greater-or-equal to the end sample time so subtract one time interval.
+                    # This is guaranteed to remain within the start/end range since that range should exceed the time interval.
+                    interpolated_sample_time -= threshold_time_interval
+            else:
+                if interpolated_sample_time <= pygplates.GeoTimeInstant(sample_time1):
+                    # We rounded down and the time was less-or-equal to the start sample time so add one time interval.
+                    # This is guaranteed to remain within the start/end range since that range should exceed the time interval.
+                    interpolated_sample_time += threshold_time_interval
+                
+        else:
+            # Just use the sample midway between 'sample1' and 'sample2'.
+            interpolated_sample_time = mid_sample_time
         
-        # Find the *new* rotation from parent plate to child plate (through removed plate).
-        #
-        # This interpolates the newly calculated samples (that go directly from parent to child, ie, not via removed plate).
-        new_parent_to_child_rotation = pygplates.FiniteRotation.interpolate(
-            sample1.get_value().get_finite_rotation(),
-            sample2.get_value().get_finite_rotation(),
-            sample_time1,
-            sample_time2,
-            mid_sample_time)
+        interpolated_sample = _add_accurate_sample(
+            rotation_model,
+            interpolated_sample_time,
+            sample1,
+            sample2,
+            child_remove_plate_id,
+            remove_plate_id,
+            parent_remove_plate_id,
+            remove_plate_max_sample_time,
+            threshold_rotation_accuracy_degrees)
         
-        # If original and new parent-to-child rotations differ too much then add a new (accurate) sample at the mid-sample time.
-        if not pygplates.FiniteRotation.are_equal(
-            original_parent_to_child_rotation,
-            new_parent_to_child_rotation,
-            threshold_rotation_accuracy_degrees):
+        if interpolated_sample:
+            parent_to_child_rotation_samples.append(interpolated_sample)
             
-            mid_sample = pygplates.GpmlTimeSample(
-                pygplates.GpmlFiniteRotation(original_parent_to_child_rotation),
-                mid_sample_time,
-                'Inserted pole to improve accuracy after removing fixed plate {0}'.format(remove_plate_id))
-            parent_to_child_rotation_samples.append(mid_sample)
+            # Recurse if the time interval between start sample and the interpolated sample exceeds threshold interval.
+            if pygplates.GeoTimeInstant(interpolated_sample_time - sample_time1) > threshold_time_interval:
+                sample_pair_stack.append((sample1, interpolated_sample))
             
-            # Recurse if the time interval between either sample and the mid-sample exceeds threshold interval.
-            if 0.5 * (sample_time2 - sample_time1) > threshold_time_interval:
-                sample_pair_stack.append((sample1, mid_sample))
-                sample_pair_stack.append((mid_sample, sample2))
+            # Recurse if the time interval between the interpolated sample and end sample exceeds threshold interval.
+            if pygplates.GeoTimeInstant(sample_time2 - interpolated_sample_time) > threshold_time_interval:
+                sample_pair_stack.append((interpolated_sample, sample2))
     
     # Sort the sample by time (if we added any new samples).
     if len(parent_to_child_rotation_samples) > num_original_samples:
         parent_to_child_rotation_samples.sort(key = lambda sample: sample.get_time())
+
+
+def _add_accurate_sample(
+        rotation_model,
+        interpolated_sample_time,
+        sample1,
+        sample2,
+        child_remove_plate_id,
+        remove_plate_id,
+        parent_remove_plate_id,
+        remove_plate_max_sample_time,
+        threshold_rotation_accuracy_degrees):
+    """Create a new accurate interpolated sample if the difference between original and new rotation models exceeds a threshold."""
+    
+    # Find the *original* rotation from parent plate to child plate (through removed plate).
+    #
+    # R(0->t,parent_plate->remove_plate)
+    parent_to_remove_rotation = rotation_model.get_rotation(
+        # If the time span of the (oldest) removed plate sequence is too short then extend its oldest rotation to the interpolated-sample time...
+        min(interpolated_sample_time, remove_plate_max_sample_time), remove_plate_id, anchor_plate_id=parent_remove_plate_id)
+    # R(0->t,remove_plate->child_plate)
+    remove_to_child_rotation = rotation_model.get_rotation(
+        interpolated_sample_time, child_remove_plate_id, anchor_plate_id=remove_plate_id)
+    original_parent_to_child_rotation = parent_to_remove_rotation * remove_to_child_rotation
+    
+    # Find the *new* rotation from parent plate to child plate (through removed plate).
+    #
+    # This interpolates the newly calculated samples (that go directly from parent to child, ie, not via removed plate).
+    new_parent_to_child_rotation = pygplates.FiniteRotation.interpolate(
+        sample1.get_value().get_finite_rotation(),
+        sample2.get_value().get_finite_rotation(),
+        sample1.get_time(),
+        sample2.get_time(),
+        interpolated_sample_time)
+    
+    # If original and new parent-to-child rotations differ too much then add a new (accurate) sample at the interpolated-sample time.
+    interpolated_sample = None
+    if not pygplates.FiniteRotation.are_equal(
+        original_parent_to_child_rotation,
+        new_parent_to_child_rotation,
+        threshold_rotation_accuracy_degrees):
+        
+        interpolated_sample = pygplates.GpmlTimeSample(
+            pygplates.GpmlFiniteRotation(original_parent_to_child_rotation),
+            interpolated_sample_time,
+            'Inserted pole to improve accuracy after removing fixed plate {0}'.format(remove_plate_id))
+    
+    return interpolated_sample
 
 
 if __name__ == '__main__':
@@ -397,22 +453,22 @@ if __name__ == '__main__':
     
     import argparse
 
-    # Action to parse an accuracy theshold tuple consisting of a rotation theshold (degrees) and threshold time interval.
+    # Action to parse a tuple of accuracy parameters.
     class ArgParseAccuracyAction(argparse.Action):
         def __call__(self, parser, namespace, values, option_string=None):
-            # Need two numbers (rotation theshold and threshold time interval).
+            # Need two numbers (rotation threshold and threshold time interval).
             if len(values) != 2:
-                parser.error('accuracy must be specified as two numbers (rotation theshold and threshold time interval)')
+                parser.error('accuracy must be specified as two numbers (rotation threshold and threshold time interval)')
             
             try:
                 # Convert strings to float.
                 threshold_rotation_accuracy_degrees = float(values[0])
                 threshold_time_interval = float(values[1])
             except ValueError:
-                raise argparse.ArgumentTypeError("encountered a rotation theshold and threshold time interval that is not a number")
+                raise argparse.ArgumentTypeError("encountered a rotation threshold and threshold time interval that is not a number")
             
             if threshold_rotation_accuracy_degrees <= 0 or threshold_rotation_accuracy_degrees > 90:
-                parser.error('rotation theshold must be in the range (0, 90]')
+                parser.error('rotation threshold must be in the range (0, 90]')
             if threshold_time_interval <= 0:
                 parser.error('threshold time interval must be positive')
             
@@ -450,16 +506,20 @@ if __name__ == '__main__':
         
         parser.add_argument(
             '-a', '--accuracy', nargs=2, action=ArgParseAccuracyAction,
-            metavar=('threshold_rotation_accuracy_degrees', 'threshold_time_interval_MY'),
-            help='Optional accuracy thresholds. '
+            metavar=('threshold_rotation_accuracy_degrees', 'threshold_time_interval_My'),
+            help='Optional accuracy parameters. '
                  'If specified then the first parameter is the threshold rotation accuracy (in degrees) and '
-                 'the second parameter is the threshold time interval. The first parameter is used to compare '
-                 'the latitude, longitude and angle of two rotations before and after removing a plate rotation. '
-                 'If any of those three parameters differ by more than the rotation accuracy (in degrees) then '
+                 'the second parameter is the threshold time interval. '
+                 'The first parameter is used to compare the latitude, longitude and angle of two rotations before and '
+                 'after removing a plate rotation. If any of those three parameters differ by more than the rotation accuracy (in degrees) then '
                  'samples at times mid-way between samples are inserted to ensure before/after accuracy of rotations. '
                  'This mid-way adaptive bisection is repeated (when there is inaccuracy) until the interval between samples '
                  'becomes smaller than the second parameter (threshold time interval). '
                  'Rotation threshold is in degrees and threshold time interval is in millions of years.')
+        
+        parser.add_argument('-u', '--use_uniform_accuracy_times', action="store_true",
+                help='If specified then rotation poles inserted for accuracy (according to "-a" option) will be restricted to times '
+                     'that are integer multiples of the threshold time interval (specified in the "-a" option).')
         
         parser.add_argument('-o', '--output_filename_prefix', type=str,
                 metavar='output_filename_prefix',
@@ -474,6 +534,11 @@ if __name__ == '__main__':
         # Parse command-line options.
         args = parser.parse_args()
         
+        # Initialise accuracy parameters (if used).
+        accuracy_parameters = None
+        if args.accuracy:
+            accuracy_parameters = args.accuracy[0], args.accuracy[1], args.use_uniform_accuracy_times
+        
         # Read the input rotation feature collections.
         input_rotation_feature_collections = [pygplates.FeatureCollection(input_rotation_filename)
                 for input_rotation_filename in args.input_rotation_filenames]
@@ -482,7 +547,7 @@ if __name__ == '__main__':
         output_rotation_feature_collections = remove_plates(
                 input_rotation_feature_collections,
                 args.plate_ids,
-                args.accuracy)
+                accuracy_parameters)
         
         # Write the modified rotation feature collections to disk.
         for rotation_feature_collection_index in range(len(output_rotation_feature_collections)):
