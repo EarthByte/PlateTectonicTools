@@ -24,7 +24,6 @@
 
 from __future__ import print_function
 import argparse
-import subprocess
 import math
 import sys
 import pygplates
@@ -108,36 +107,76 @@ def find_overriding_and_subducting_plates(subduction_shared_sub_segment, time):
     return (overriding_plate, subducting_plate, subduction_polarity)
 
 
-# Resolves topologies at 'time', tessellates all resolved subduction zones to within
-# 'threshold_sampling_distance_radians' radians and returns the following convergence-related parameters
-# at each tessellates point:
-#
-# - point longitude
-# - point latitude
-# - subducting convergence (relative to overriding plate) velocity magnitude (in cm/yr)
-# - subducting convergence velocity obliquity angle (angle between subduction zone normal vector and convergence velocity vector)
-# - subduction zone absolute (relative to anchor plate) velocity magnitude (in cm/yr)
-# - subduction zone absolute velocity obliquity angle (angle between subduction zone normal vector and absolute velocity vector)
-# - length of arc segment (in degrees) that current point is on
-# - subducting arc normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
-# - subducting plate ID
-# - overriding plate ID
-#
-# Note that the convergence velocity magnitudes are negative if the plates are diverging
-# (if convergence obliquity angle is greater than 90 or less than -90).
-# And note that the absolute velocity magnitudes are negative if the subduction zones absolute motion is heading
-# in the direction of the overriding plates (if absolute obliquity angle is less than 90 and greater than -90).
-
 def subduction_convergence(
-        # Rotation model or feature collection(s), or list of features, or filename(s)...
         rotation_features_or_model,
-        # Topology feature collection(s), or list of features, or filename(s) or any combination of those...
         topology_features,
-        # Threshold sampling distance along subduction zones (in radians)...
         threshold_sampling_distance_radians,
         time,
         velocity_delta_time = 1.0,
         anchor_plate_id = 0):
+    # Docstring in numpydoc format...
+    """Find the convergence and absolute velocities sampled along subduction zones at a particular geological time.
+    
+    Each sampled point along subduction zones returns the following information:
+    
+    * subducting convergence (relative to overriding plate) velocity magnitude (in cm/yr)
+    * subducting convergence velocity obliquity angle (angle between subduction zone normal vector and convergence velocity vector)
+    * subduction zone absolute (relative to anchor plate) velocity magnitude (in cm/yr)
+    * subduction zone absolute velocity obliquity angle (angle between subduction zone normal vector and absolute velocity vector)
+    * length of arc segment (in degrees) that current point is on
+    * subducting arc normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
+    * subducting plate ID
+    * overriding plate ID
+    
+    The obliquity angles are in the range (-180 180). The range (0, 180) goes clockwise (when viewed from above the Earth) from the
+    subducting normal direction to the velocity vector. The range (0, -180) goes counter-clockwise.
+    You can change the range (-180, 180) to the range (0, 360) by adding 360 to negative angles.
+    
+    Note that the convergence velocity magnitude is negative if the plates are diverging (if convergence obliquity angle
+    is greater than 90 or less than -90). And note that the absolute velocity magnitude is negative if the subduction zone (trench)
+    is moving towards the overriding plate (if absolute obliquity angle is less than 90 or greater than -90) - note that this
+    ignores the kinematics of the subducting plate.
+    
+    Parameters
+    ----------
+    rotation_features_or_model : pygplates.RotationModel, or any combination of str, pygplates.FeatureCollection, pygplates.Feature
+        The rotation model can be specified as a RotationModel. Or it can be specified as a rotation feature collection,
+        or rotation filename, or rotation feature, or sequence of rotation features, or a sequence (eg, list or tuple) of any combination
+        of those four types.
+    topology_features: any combination of str, pygplates.FeatureCollection, pygplates.Feature
+        The topological boundary and network features and the topological section features they reference (regular and topological lines).
+        Can be specified as a feature collection, or filename, or feature, or sequence of features, or a sequence (eg, list or tuple)
+        of any combination of those four types.
+    threshold_sampling_distance_radians: float
+        Threshold sampling distance along subduction zones (in radians).
+    time: float
+        The reconstruction time at which to query subduction convergence.
+    velocity_delta_time: float, optional
+        The delta time interval used for velocity calculations. Defaults to 1My.
+    anchor_plate_id: int, optional
+        The anchor plate of the rotation model. Defaults to zero.
+    
+    Returns
+    -------
+    list of tuples
+        The results for all points sampled along subduction zones.
+        The size of the returned list is equal to the number of sampled points.
+        Each tuple in the list corresponds to a point and has the following tuple items:
+    
+    Notes
+    -----
+    Each point in the output is the midpoint of a great circle arc between two adjacent points in the subduction zone polyline.
+    The subduction zone normal vector used in the obliquity calculations is perpendicular to the great circle arc of each point (arc midpoint)
+    and pointing towards the overriding plate (rather than away from it).
+    
+    Each subduction zone is sampled at approximately uniform intervals along its length (specified via a threshold sampling distance).
+    The sampling along the entire length of a subduction zone is not exactly uniform. Each segment along a subduction zone is sampled
+    such that the samples have a uniform spacing that is less than or equal to the threshold sampling distance. However each segment
+    in a subduction zone might have a slightly different spacing distance (since segment lengths are not integer multiples of
+    the threshold sampling distance).
+    
+    The subducting arc normal (at each arc segment mid-point) always points *towards* the overriding plate.
+    """
     
     # Turn rotation data into a RotationModel (if not already).
     rotation_model = pygplates.RotationModel(rotation_features_or_model)
