@@ -66,33 +66,48 @@ def remove_features_not_referenced_by_topologies(
     feature_collections = [list(pygplates.FeatureCollection(feature_collection))
         for feature_collection in feature_collections]
     
-    # Set of feature IDs of all topological features to keep (that should not be removed).
-    topology_feature_ids = set()
+    # Set of feature IDs of all topological polygons and networks.
+    # Note that we only keep topological lines if they are referenced by a topological polygon or network.
+    feature_ids_of_topological_polygon_and_networks = set()
+    feature_ids_referenced_by_topological_polygon_and_networks = set()
     
-    property_delegates_visitor = _GetTopologicalPropertyDelegatesVisitor()
+    topological_line_references = dict()
+    
+    # Find all topological features and their references to regular features.
+    topological_reference_visitor = _TopologicalReferenceVisitor()
     for feature_collection in feature_collections:
         for feature in feature_collection:
-            for property in feature:
-                # Get the top-level property value (containing all times) not just a specific time.
-                property_value = property.get_time_dependent_value()
-                # If we visited a topological line, polygon or network then add the current feature
-                # as a topological feature and continue to the next feature.
-                if property_delegates_visitor.visit_property_value(property_value):
-                    topology_feature_ids.add(feature.get_feature_id())
-                    break
+            # See if the current feature has a topological geometry and (if so) find the features it references.
+            topology_type, referenced_feature_ids = topological_reference_visitor.visit_feature(feature)
+            if topology_type == pygplates.GpmlTopologicalLine:
+                topological_line_references[feature.get_feature_id()] = referenced_feature_ids
+            elif (topology_type == pygplates.GpmlTopologicalPolygon or
+                topology_type == pygplates.GpmlTopologicalNetwork):
+                # Add the current topological polygon or network.
+                feature_ids_of_topological_polygon_and_networks.add(feature.get_feature_id())
+                # Add the features referenced by the current topological polygon or network.
+                feature_ids_referenced_by_topological_polygon_and_networks.update(referenced_feature_ids)
     
-    # Set of feature IDs of all feature referenced by topologies.
-    referenced_feature_ids = set(property_delegate.get_feature_id()
-        for property_delegate in property_delegates_visitor.get_topological_property_delegates())
+    # Find features referenced by topological lines that are in turn referenced by topological polygons or networks.
+    feature_ids_referenced_by_topological_lines_referenced_by_topological_polygon_and_networks = set()
+    for feature_id in feature_ids_referenced_by_topological_polygon_and_networks:
+        references = topological_line_references.get(feature_id)
+        if references:
+            feature_ids_referenced_by_topological_lines_referenced_by_topological_polygon_and_networks.update(references)
     
-    # Remove any features that are not topological and have not been referenced by a topology.
+    # Only keep features that are topological polygons and networks, and any features referenced directly
+    # or indirectly by them. For example, a topological polygon might reference a topological line which
+    # in turn references regular features. In this case the topological line and the features it references
+    # must all be kept.
+    feature_ids_to_keep = (feature_ids_of_topological_polygon_and_networks |
+                           feature_ids_referenced_by_topological_polygon_and_networks |
+                           feature_ids_referenced_by_topological_lines_referenced_by_topological_polygon_and_networks)
     for feature_collection in feature_collections:
         feature_index = 0
         while feature_index < len(feature_collection):
             feature = feature_collection[feature_index]
             feature_id = feature.get_feature_id()
-            if (feature_id not in topology_feature_ids and
-                feature_id not in referenced_feature_ids):
+            if feature_id not in feature_ids_to_keep:
                 del feature_collection[feature_index]
                 feature_index -= 1
             
@@ -104,22 +119,25 @@ def remove_features_not_referenced_by_topologies(
 
 
 # Private helper class (has '_' prefix) to find topology-related GpmlPropertyDelegate's.
-class _GetTopologicalPropertyDelegatesVisitor(pygplates.PropertyValueVisitor):
+class _TopologicalReferenceVisitor(pygplates.PropertyValueVisitor):
     def __init__(self):
-        super(_GetTopologicalPropertyDelegatesVisitor, self).__init__()
-        self.topological_property_delegates = []
+        super(_TopologicalReferenceVisitor, self).__init__()
     
-    def get_topological_property_delegates(self):
-        return self.topological_property_delegates
-    
-    def visit_property_value(self, property_value):
-        """Visit a property value.
+    def visit_feature(self, feature):
+        self.topology_type = None
+        self.referenced_feature_ids = set()
         
-        Return True if visited a topological line, polygon or network."""
-        num_topological_property_delegates_before_visit = len(self.topological_property_delegates)
-        property_value.accept_visitor(self)
+        # Visit all properties in the feature to find a topological line, polygon or network.
+        for property in feature:
+            # Get the top-level property value (containing all times) not just a specific time.
+            property_value = property.get_time_dependent_value()
+            # Visit the property value.
+            property_value.accept_visitor(self)
+            # If we visited a topological line, polygon or network then we're finished with the current feature.
+            if self.topology_type:
+                break
         
-        return len(self.topological_property_delegates) > num_topological_property_delegates_before_visit
+        return self.topology_type, self.referenced_feature_ids
     
     def visit_gpml_constant_value(self, gpml_constant_value):
         # Visit the GpmlConstantValue's nested property value.
@@ -136,22 +154,25 @@ class _GetTopologicalPropertyDelegatesVisitor(pygplates.PropertyValueVisitor):
                 gpml_time_window.get_value().accept_visitor(self)
     
     def visit_gpml_topological_line(self, gpml_topological_line):
+        self.topology_type = pygplates.GpmlTopologicalLine
         # Topological line sections are topological sections (which contain a property delegate).
         for section in gpml_topological_line.get_sections():
-            self.topological_property_delegates.append(section.get_property_delegate())
+            self.referenced_feature_ids.add(section.get_property_delegate().get_feature_id())
     
     def visit_gpml_topological_polygon(self, gpml_topological_polygon):
+        self.topology_type = pygplates.GpmlTopologicalPolygon
         # Topological polygon exterior sections are topological sections (which contain a property delegate).
         for exterior_section in gpml_topological_polygon.get_exterior_sections():
-            self.topological_property_delegates.append(exterior_section.get_property_delegate())
+            self.referenced_feature_ids.add(exterior_section.get_property_delegate().get_feature_id())
     
     def visit_gpml_topological_network(self, gpml_topological_network):
+        self.topology_type = pygplates.GpmlTopologicalNetwork
         # Topological network boundary sections are topological sections (which contain a property delegate).
         for boundary_section in gpml_topological_network.get_boundary_sections():
-            self.topological_property_delegates.append(boundary_section.get_property_delegate())
+            self.referenced_feature_ids.add(boundary_section.get_property_delegate().get_feature_id())
         # Topological network interiors are already property delegates.
         for interior in gpml_topological_network.get_interiors():
-            self.topological_property_delegates.append(interior)
+            self.referenced_feature_ids.add(interior.get_feature_id())
 
 
 if __name__ == '__main__':
