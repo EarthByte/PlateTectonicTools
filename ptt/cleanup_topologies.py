@@ -29,6 +29,33 @@ import sys
 import math
 import pygplates
 
+#
+# Python 2 and 3 compatibility.
+#
+# Iterating over a dict.
+try:
+    dict.iteritems
+except AttributeError:
+    # Python 3
+    def itervalues(d):
+        return iter(d.values())
+    def iteritems(d):
+        return iter(d.items())
+    def listvalues(d):
+        return list(d.values())
+    def listitems(d):
+        return list(d.items())
+else:
+    # Python 2
+    def itervalues(d):
+        return d.itervalues()
+    def iteritems(d):
+        return d.iteritems()
+    def listvalues(d):
+        return d.values()
+    def listitems(d):
+        return d.items()
+
 
 # Required pygplates version.
 # Need ability to query topological sections.
@@ -72,55 +99,148 @@ def remove_features_not_referenced_by_topologies(
     
     # Set of feature IDs of all topological polygons and networks.
     # Note that we only keep topological lines if they are referenced by a topological polygon or network.
-    set_feature_ids_of_topological_polygons_and_networks = set()
+    feature_ids_of_topological_polygons_and_networks = set()
     # Set of feature IDs referenced by all topological polygons and networks.
-    set_feature_ids_referenced_by_topological_polygons_and_networks = set()
+    feature_ids_referenced_by_topological_polygons_and_networks = set()
     # Set of feature IDs referenced by topological lines that are referenced by topological polygons and networks.
-    set_feature_ids_referenced_by_topological_lines_referenced_by_topological_polygons_and_networks = set()
+    feature_ids_referenced_by_topological_lines_referenced_by_topological_polygons_and_networks = set()
     
     # The features referenced by topological polygons and networks.
     topological_polygon_and_network_references = []
     # The features referenced by topological lines.
     topological_line_references = dict()
     
+    # All features mapped by feature ID.
+    all_features = dict()
+    
     # Find all topological features and their references to regular features.
     topological_reference_visitor = _TopologicalReferenceVisitor()
     for feature_collection in feature_collections:
         for feature in feature_collection:
+            feature_id = feature.get_feature_id()
+            
+            # Enable any feature to be looked up using its feature ID.
+            all_features[feature_id] = feature
+            
             # See if the current feature has a topological geometry and (if so) find the features it references.
-            topology_type, topological_reference = topological_reference_visitor.visit_feature(feature)
+            topology_type, topological_references = topological_reference_visitor.visit_feature(feature)
+            
             # For topological lines, we'll just keep track of their references for later since we don't yet know
             # which topological lines (if any) will in turn be referenced by topological polygons and  networks.
             if topology_type == pygplates.GpmlTopologicalLine:
-                topological_line_references[feature.get_feature_id()] = topological_reference
+                topological_line_references[feature_id] = (feature, topological_references)
             # For topological polygons and networks, we know they get included straight away.
             elif (topology_type == pygplates.GpmlTopologicalPolygon or
                 topology_type == pygplates.GpmlTopologicalNetwork):
-                topological_polygon_and_network_references.append(topological_reference)
+                topological_polygon_and_network_references.append((feature, topological_references))
                 # Add the current topological polygon or network.
-                set_feature_ids_of_topological_polygons_and_networks.add(feature.get_feature_id())
+                feature_ids_of_topological_polygons_and_networks.add(feature_id)
             # else it's not a topological feature, so ignore it.
     
-    # Find features referenced by topological lines that are in turn referenced by topological polygons or networks.
-    for topological_polygon_and_network_reference in topological_polygon_and_network_references:
-        for time_period, feature_ids_referenced_in_time_period in topological_polygon_and_network_reference.get_references():
-            # Add the features referenced by the current topological polygon or network.
-            set_feature_ids_referenced_by_topological_polygons_and_networks.update(feature_ids_referenced_in_time_period)
+    # Referenced time periods of referenced feature (non-topological and topological lines).
+    time_periods_of_referenced_non_topological_features = dict()
+    time_periods_of_referenced_topological_line_features = dict()
+    
+    # Set of feature IDs of topological lines that are referenced by topological polygons and networks.
+    feature_ids_of_topological_lines_referenced_by_topological_polygons_and_networks = set()
+    
+    # Start with begin time as -inf (so that it can only get larger with max() function) and
+    # end time as +inf (so that it can only get smaller with min() function).
+    uninitialised_time_period = float('-inf'), float('inf')  # begin_time, end_time
+    
+    # Find features directly referenced by topological polygons and networks.
+    for topological_polygon_and_network_feature, topological_polygon_and_network_reference in topological_polygon_and_network_references:
+        for (reference_begin_time, reference_end_time), feature_ids_referenced_in_time_period in topological_polygon_and_network_reference:
+            # Restrict the current referenced time period to that of the topological polygon (or network) valid time period.
+            topological_polygon_and_network_begin_time, topological_polygon_and_network_end_time = topological_polygon_and_network_feature.get_valid_time()
+            if reference_begin_time > topological_polygon_and_network_begin_time:
+                reference_begin_time = topological_polygon_and_network_begin_time
+            if reference_end_time < topological_polygon_and_network_end_time:
+                reference_end_time = topological_polygon_and_network_end_time
             
-            for referenced_feature_id in feature_ids_referenced_in_time_period:
-                # If the referenced feature is a topological line then the features it references in turn should be included.
-                topological_line_reference = topological_line_references.get(referenced_feature_id)
-                if topological_line_reference:
-                    set_feature_ids_referenced_by_topological_lines_referenced_by_topological_polygons_and_networks.update(
-                        topological_line_reference.get_referenced_feature_ids())
+            # If the referenced time period and the topological polygon/network valid time overlap.
+            if reference_begin_time >= reference_end_time:
+                # Add the features referenced by the current topological polygon or network.
+                feature_ids_referenced_by_topological_polygons_and_networks.update(feature_ids_referenced_in_time_period)
+            
+                # Iterate over referenced feature IDs for the currently reference time period.
+                for referenced_feature_id in feature_ids_referenced_in_time_period:
+                    # Point to time periods of either topological line features or non-topological features.
+                    if referenced_feature_id in topological_line_references:
+                        time_periods_of_referenced_features = time_periods_of_referenced_topological_line_features
+                        feature_ids_of_topological_lines_referenced_by_topological_polygons_and_networks.add(referenced_feature_id)
+                    else:
+                        time_periods_of_referenced_features = time_periods_of_referenced_non_topological_features
+                    
+                    # The current referenced feature needs to include the time period referenced by the topological polygon (or network).
+                    referenced_feature_max_begin_time, referenced_feature_min_end_time = (
+                        time_periods_of_referenced_features.get(referenced_feature_id, uninitialised_time_period))
+                    time_periods_of_referenced_features[referenced_feature_id] = (
+                        max(referenced_feature_max_begin_time, reference_begin_time),
+                        min(referenced_feature_min_end_time, reference_end_time))
+    
+    if restrict_referenced_feature_time_periods:
+        # Restrict the valid time periods of all referenced *topological line* features such that they are limited by the time periods of the referencing topologies.
+        for referenced_feature_id, (referenced_feature_max_begin_time, referenced_feature_min_end_time) in iteritems(time_periods_of_referenced_topological_line_features):
+            referenced_feature = all_features.get(referenced_feature_id)
+            if referenced_feature:  # Referenced feature might not actually exist.
+                begin_time, end_time = referenced_feature.get_valid_time()
+                if begin_time > referenced_feature_max_begin_time:
+                    begin_time = referenced_feature_max_begin_time
+                if end_time < referenced_feature_min_end_time:
+                    end_time = referenced_feature_min_end_time
+                
+                # If the referenced time period and the topological line feature valid time overlap.
+                if begin_time >= end_time:
+                    referenced_feature.set_valid_time(begin_time, end_time)
+    
+    # Iterate over topological lines referenced by topological polygons and networks.
+    for referenced_topological_line_feature_id in feature_ids_of_topological_lines_referenced_by_topological_polygons_and_networks:
+        topological_line_feature, topological_line_reference = topological_line_references[referenced_topological_line_feature_id]
+        for (reference_begin_time, reference_end_time), feature_ids_referenced_in_time_period in topological_line_reference:
+            # Restrict the current referenced time period to that of the topological line valid time period.
+            topological_line_begin_time, topological_line_end_time = topological_line_feature.get_valid_time()
+            if reference_begin_time > topological_line_begin_time:
+                reference_begin_time = topological_line_begin_time
+            if reference_end_time < topological_line_end_time:
+                reference_end_time = topological_line_end_time
+            
+            # If the referenced time period and the topological line valid time overlap.
+            if reference_begin_time >= reference_end_time:
+                # Add the features referenced by the current topological line (which is referenced by a topological polygon or network).
+                feature_ids_referenced_by_topological_lines_referenced_by_topological_polygons_and_networks.update(feature_ids_referenced_in_time_period)
+                
+                # Iterate over referenced feature IDs for the currently referenced time period.
+                for referenced_feature_id in feature_ids_referenced_in_time_period:
+                    # The current referenced feature needs to include the time period referenced by the topological line.
+                    referenced_feature_max_begin_time, referenced_feature_min_end_time = (
+                        time_periods_of_referenced_non_topological_features.get(referenced_feature_id, uninitialised_time_period))
+                    time_periods_of_referenced_non_topological_features[referenced_feature_id] = (
+                        max(referenced_feature_max_begin_time, reference_begin_time),
+                        min(referenced_feature_min_end_time, reference_end_time))
+    
+    if restrict_referenced_feature_time_periods:
+        # Restrict the valid time periods of all referenced *non-topological* features such that they are limited by the time periods of the referencing topologies.
+        for referenced_feature_id, (referenced_feature_max_begin_time, referenced_feature_min_end_time) in iteritems(time_periods_of_referenced_non_topological_features):
+            referenced_feature = all_features.get(referenced_feature_id)
+            if referenced_feature:  # Referenced feature might not actually exist.
+                begin_time, end_time = referenced_feature.get_valid_time()
+                if begin_time > referenced_feature_max_begin_time:
+                    begin_time = referenced_feature_max_begin_time
+                if end_time < referenced_feature_min_end_time:
+                    end_time = referenced_feature_min_end_time
+                
+                # If the referenced time period and the non-topological feature valid time overlap.
+                if begin_time >= end_time:
+                    referenced_feature.set_valid_time(begin_time, end_time)
     
     # Only keep features that are topological polygons and networks, and any features referenced directly
     # or indirectly by them. For example, a topological polygon might reference a topological line which
     # in turn references regular features. In this case the topological line and the features it references
     # must all be kept.
-    feature_ids_to_keep = (set_feature_ids_of_topological_polygons_and_networks |
-                           set_feature_ids_referenced_by_topological_polygons_and_networks |
-                           set_feature_ids_referenced_by_topological_lines_referenced_by_topological_polygons_and_networks)
+    feature_ids_to_keep = (feature_ids_of_topological_polygons_and_networks |
+                           feature_ids_referenced_by_topological_polygons_and_networks |
+                           feature_ids_referenced_by_topological_lines_referenced_by_topological_polygons_and_networks)
     for feature_collection in feature_collections:
         feature_index = 0
         while feature_index < len(feature_collection):
@@ -159,7 +279,7 @@ class _TopologicalReferenceVisitor(pygplates.PropertyValueVisitor):
             if self.topology_type:
                 break
         
-        return self.topology_type, _TopologicalReference(feature, self.references)
+        return self.topology_type, self.references
     
     def visit_gpml_constant_value(self, gpml_constant_value):
         # Visit the GpmlConstantValue's nested property value.
@@ -206,52 +326,34 @@ class _TopologicalReferenceVisitor(pygplates.PropertyValueVisitor):
                     self.current_time_period = self.ALL_TIME
     
     def visit_gpml_topological_line(self, gpml_topological_line):
-        set_referenced_feature_ids = set()
+        referenced_feature_ids = set()
         # Topological line sections are topological sections (which contain a property delegate).
         for section in gpml_topological_line.get_sections():
-            set_referenced_feature_ids.add(section.get_property_delegate().get_feature_id())
+            referenced_feature_ids.add(section.get_property_delegate().get_feature_id())
         
         self.topology_type = pygplates.GpmlTopologicalLine
-        self.references.append((self.current_time_period, set_referenced_feature_ids))
+        self.references.append((self.current_time_period, referenced_feature_ids))
     
     def visit_gpml_topological_polygon(self, gpml_topological_polygon):
-        set_referenced_feature_ids = set()
+        referenced_feature_ids = set()
         # Topological polygon exterior sections are topological sections (which contain a property delegate).
         for exterior_section in gpml_topological_polygon.get_exterior_sections():
-            set_referenced_feature_ids.add(exterior_section.get_property_delegate().get_feature_id())
+            referenced_feature_ids.add(exterior_section.get_property_delegate().get_feature_id())
         
         self.topology_type = pygplates.GpmlTopologicalPolygon
-        self.references.append((self.current_time_period, set_referenced_feature_ids))
+        self.references.append((self.current_time_period, referenced_feature_ids))
     
     def visit_gpml_topological_network(self, gpml_topological_network):
-        set_referenced_feature_ids = set()
+        referenced_feature_ids = set()
         # Topological network boundary sections are topological sections (which contain a property delegate).
         for boundary_section in gpml_topological_network.get_boundary_sections():
-            set_referenced_feature_ids.add(boundary_section.get_property_delegate().get_feature_id())
+            referenced_feature_ids.add(boundary_section.get_property_delegate().get_feature_id())
         # Topological network interiors are already property delegates.
         for interior in gpml_topological_network.get_interiors():
-            set_referenced_feature_ids.add(interior.get_feature_id())
+            referenced_feature_ids.add(interior.get_feature_id())
         
         self.topology_type = pygplates.GpmlTopologicalNetwork
-        self.references.append((self.current_time_period, set_referenced_feature_ids))
-
-
-class _TopologicalReference(object):
-    def __init__(self, feature, references):
-        self.feature = feature
-        self.references = references
-    
-    def get_feature(self):
-        return self.feature
-    
-    def get_references(self):
-        return self.references
-    
-    def get_referenced_feature_ids(self):
-        set_referenced_feature_ids = set()
-        for time_period, feature_ids_referenced_in_time_period in self.references:
-            set_referenced_feature_ids.update(feature_ids_referenced_in_time_period)
-        return set_referenced_feature_ids
+        self.references.append((self.current_time_period, referenced_feature_ids))
 
 
 if __name__ == '__main__':
@@ -296,6 +398,10 @@ if __name__ == '__main__':
                     'is created for each input file by prefixing the input filenames. '
                     'If no filename prefix is provided then the input files are overwritten.')
         
+        parser.add_argument('-p', '--restricted_referenced_time_periods', action="store_true",
+                help='If specified then restrict the time periods of features referenced by topologies such that they are '
+                     'limited by the time periods of the referencing topologies (default is no restriction).')
+        
         parser.add_argument('input_filenames', type=str, nargs='+',
                 metavar='input_filename',
                 help='One or more files containing topological features and features referenced by them.')
@@ -308,7 +414,9 @@ if __name__ == '__main__':
                 for input_filename in args.input_filenames]
         
         # Remove features not referenced by topologies.
-        output_feature_collections = remove_features_not_referenced_by_topologies(input_feature_collections)
+        output_feature_collections = remove_features_not_referenced_by_topologies(
+            input_feature_collections,
+            args.restricted_referenced_time_periods)
         
         # Write the modified feature collections to disk.
         for feature_collection_index in range(len(output_feature_collections)):
@@ -334,5 +442,5 @@ if __name__ == '__main__':
     except Exception as exc:
         print('ERROR: {0}'.format(exc), file=sys.stderr)
         # Uncomment this to print traceback to location of raised exception.
-        # traceback.print_exc()
+        traceback.print_exc()
         sys.exit(1)
