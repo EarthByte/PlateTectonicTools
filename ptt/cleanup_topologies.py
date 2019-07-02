@@ -64,7 +64,8 @@ PYGPLATES_VERSION_REQUIRED = pygplates.Version(21)
 
 def remove_features_not_referenced_by_topologies(
         feature_collections,
-        restrict_referenced_feature_time_periods=False):
+        restrict_referenced_feature_time_periods=False,
+        removed_features_collections=None):
     # Docstring in numpydoc format...
     """Remove any regular features not referenced by topological features.
     
@@ -83,6 +84,9 @@ def remove_features_not_referenced_by_topologies(
     restrict_referenced_feature_time_periods: bool
         Whether to restrict the time periods of features referenced by topologies such that they are
         limited by the time periods of the referencing topologies.
+    removed_features_collections: list
+        If an empty list is provided then it will be filled with one feature collection for each input feature collection.
+        And each of these will contain any removed features.
     
     Returns
     -------
@@ -150,9 +154,9 @@ def remove_features_not_referenced_by_topologies(
     
     # Find features directly referenced by topological polygons and networks.
     for topological_polygon_and_network_feature, topological_polygon_and_network_reference in topological_polygon_and_network_references:
+        topological_polygon_and_network_begin_time, topological_polygon_and_network_end_time = topological_polygon_and_network_feature.get_valid_time()
         for (reference_begin_time, reference_end_time), feature_ids_referenced_in_time_period in topological_polygon_and_network_reference:
             # Restrict the current referenced time period to that of the topological polygon (or network) valid time period.
-            topological_polygon_and_network_begin_time, topological_polygon_and_network_end_time = topological_polygon_and_network_feature.get_valid_time()
             if reference_begin_time > topological_polygon_and_network_begin_time:
                 reference_begin_time = topological_polygon_and_network_begin_time
             if reference_end_time < topological_polygon_and_network_end_time:
@@ -197,9 +201,9 @@ def remove_features_not_referenced_by_topologies(
     # Iterate over topological lines referenced by topological polygons and networks.
     for referenced_topological_line_feature_id in feature_ids_of_topological_lines_referenced_by_topological_polygons_and_networks:
         topological_line_feature, topological_line_reference = topological_line_references[referenced_topological_line_feature_id]
+        topological_line_begin_time, topological_line_end_time = topological_line_feature.get_valid_time()
         for (reference_begin_time, reference_end_time), feature_ids_referenced_in_time_period in topological_line_reference:
             # Restrict the current referenced time period to that of the topological line valid time period.
-            topological_line_begin_time, topological_line_end_time = topological_line_feature.get_valid_time()
             if reference_begin_time > topological_line_begin_time:
                 reference_begin_time = topological_line_begin_time
             if reference_end_time < topological_line_end_time:
@@ -242,6 +246,11 @@ def remove_features_not_referenced_by_topologies(
                            feature_ids_referenced_by_topological_polygons_and_networks |
                            feature_ids_referenced_by_topological_lines_referenced_by_topological_polygons_and_networks)
     for feature_collection in feature_collections:
+        # Create an extra feature collection (containing removed features) for each feature collection.
+        if removed_features_collections is not None:
+            removed_features_collection = pygplates.FeatureCollection()
+            removed_features_collections.append(removed_features_collection)
+        
         feature_index = 0
         while feature_index < len(feature_collection):
             feature = feature_collection[feature_index]
@@ -249,6 +258,10 @@ def remove_features_not_referenced_by_topologies(
             if feature_id not in feature_ids_to_keep:
                 del feature_collection[feature_index]
                 feature_index -= 1
+                
+                # Keep track of the removed feature if requested.
+                if removed_features_collections is not None:
+                    removed_features_collection.add(feature)
             
             feature_index += 1
     
@@ -395,8 +408,15 @@ if __name__ == '__main__':
         parser.add_argument('-o', '--output_filename_prefix', type=str,
                 metavar='output_filename_prefix',
                 help='Optional output filename prefix. If one is provided then an output file '
-                    'is created for each input file by prefixing the input filenames. '
-                    'If no filename prefix is provided then the input files are overwritten.')
+                     'is created for each input file by prefixing the input filenames. '
+                     'If no filename prefix is provided then the input files are overwritten.')
+        
+        parser.add_argument('-d', '--removed_features_filename_prefix', type=str,
+                metavar='removed_features_filename_prefix',
+                help='Option to save removed features in new files with specified filename prefix. '
+                     'If specified then a file is created for each input file (that has features removed) '
+                     'by prefixing the input filenames. If no filename prefix is provided then the '
+                     'removed features are not saved.')
         
         parser.add_argument('-p', '--restricted_referenced_time_periods', action="store_true",
                 help='If specified then restrict the time periods of features referenced by topologies such that they are '
@@ -413,24 +433,32 @@ if __name__ == '__main__':
         input_feature_collections = [pygplates.FeatureCollection(input_filename)
                 for input_filename in args.input_filenames]
         
+        # If we're saving the removed features then provide a list for those feature collections.
+        removed_features_collections = [] if args.removed_features_filename_prefix else None
+        
         # Remove features not referenced by topologies.
         output_feature_collections = remove_features_not_referenced_by_topologies(
             input_feature_collections,
-            args.restricted_referenced_time_periods)
+            args.restricted_referenced_time_periods,
+            removed_features_collections)
         
         # Write the modified feature collections to disk.
         for feature_collection_index in range(len(output_feature_collections)):
-            output_feature_collection = output_feature_collections[feature_collection_index]
-
             # Each output filename is the input filename with an optional prefix prepended.
             input_filename = args.input_filenames[feature_collection_index]
+            
             if args.output_filename_prefix:
                 dir, file_basename = os.path.split(input_filename)
                 output_filename = os.path.join(dir, '{0}{1}'.format(args.output_filename_prefix, file_basename))
             else:
                 output_filename = input_filename
+            output_feature_collections[feature_collection_index].write(output_filename)
             
-            output_feature_collection.write(output_filename)
+            # Write the removed features to disk.
+            if args.removed_features_filename_prefix:
+                dir, file_basename = os.path.split(input_filename)
+                removed_features_filename = os.path.join(dir, '{0}{1}'.format(args.removed_features_filename_prefix, file_basename))
+                removed_features_collections[feature_collection_index].write(removed_features_filename)
         
         sys.exit(0)
     
@@ -442,5 +470,5 @@ if __name__ == '__main__':
     except Exception as exc:
         print('ERROR: {0}'.format(exc), file=sys.stderr)
         # Uncomment this to print traceback to location of raised exception.
-        traceback.print_exc()
+        # traceback.print_exc()
         sys.exit(1)
