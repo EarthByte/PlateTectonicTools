@@ -31,6 +31,7 @@ Also, the following packages are required:
 
 - [`numpy`](http://numpy.org)
 - [`scipy`](https://scipy.org)
+- [`pygplates`](http://gplates.org/docs/pygplates/pygplates_getting_started.html#installation)
 
 __Optional dependencies__ for running the Notebooks:
 
