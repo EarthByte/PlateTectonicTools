@@ -1,0 +1,9 @@
+
+include README.md
+include MANIFEST.in
+include LICENSE
+include setup.cfg
+recursive-include ptt/ *.py
+recursive-include ptt/ *.ipynb
+include ptt/Examples/data/*.gpmlz
+include ptt/Examples/data/*.rot

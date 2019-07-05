@@ -27,6 +27,11 @@ import argparse
 import math
 import sys
 import pygplates
+import warnings
+
+
+def _runtime_warning(message_string):
+    warnings.warn(message_string, RuntimeWarning)
 
 
 # Required pygplates version.
@@ -49,17 +54,17 @@ def find_overriding_and_subducting_plates(subduction_shared_sub_segment, time):
     # Get the subduction polarity of the nearest subducting line.
     subduction_polarity = subduction_shared_sub_segment.get_feature().get_enumeration(pygplates.PropertyName.gpml_subduction_polarity)
     if (not subduction_polarity) or (subduction_polarity == 'Unknown'):
-        print('Unable to find the overriding plate of the subducting shared sub-segment "{0}"'.format(
-            subduction_shared_sub_segment.get_feature().get_name()), file=sys.stderr)
-        print('    subduction zone feature is missing subduction polarity property or it is set to "Unknown".', file=sys.stderr)
+        _runtime_warning('Unable to find the overriding plate of the subducting shared sub-segment "{0}"'.format(
+            subduction_shared_sub_segment.get_feature().get_name()))
+        _runtime_warning('    subduction zone feature is missing subduction polarity property or it is set to "Unknown".',)
         return
 
     # There should be two sharing topologies - one is the overriding plate and the other the subducting plate.
     sharing_resolved_topologies = subduction_shared_sub_segment.get_sharing_resolved_topologies()
     if len(sharing_resolved_topologies) != 2:
-        print('Unable to find the overriding and subducting plates of the subducting shared sub-segment "{0}" at {1}Ma'.format(
-            subduction_shared_sub_segment.get_feature().get_name(), time), file=sys.stderr)
-        print('    there are not exactly 2 topologies sharing the sub-segment.', file=sys.stderr)
+        _runtime_warning('Unable to find the overriding and subducting plates of the subducting shared sub-segment "{0}" at {1}Ma'.format(
+            subduction_shared_sub_segment.get_feature().get_name(), time))
+        _runtime_warning('    there are not exactly 2 topologies sharing the sub-segment.')
         return
 
     overriding_plate = None
@@ -93,15 +98,15 @@ def find_overriding_and_subducting_plates(subduction_shared_sub_segment, time):
                 subducting_plate = sharing_resolved_topology
     
     if overriding_plate is None:
-        print('Unable to find the overriding plate of the subducting shared sub-segment "{0}" at {1}Ma'.format(
-            subduction_shared_sub_segment.get_feature().get_name(), time), file=sys.stderr)
-        print('    both sharing topologies are on subducting side of subducting line.', file=sys.stderr)
+        _runtime_warning('Unable to find the overriding plate of the subducting shared sub-segment "{0}" at {1}Ma'.format(
+            subduction_shared_sub_segment.get_feature().get_name(), time))
+        _runtime_warning('    both sharing topologies are on subducting side of subducting line.')
         return
     
     if subducting_plate is None:
-        print('Unable to find the subducting plate of the subducting shared sub-segment "{0}" at {1}Ma'.format(
-            subduction_shared_sub_segment.get_feature().get_name(), time), file=sys.stderr)
-        print('    both sharing topologies are on overriding side of subducting line.', file=sys.stderr)
+        _runtime_warning('Unable to find the subducting plate of the subducting shared sub-segment "{0}" at {1}Ma'.format(
+            subduction_shared_sub_segment.get_feature().get_name(), time))
+        _runtime_warning('    both sharing topologies are on overriding side of subducting line.')
         return
     
     return (overriding_plate, subducting_plate, subduction_polarity)
@@ -426,11 +431,11 @@ def subduction_convergence_over_time(
         anchor_plate_id = 0):
     
     if time_increment <= 0:
-        print('The time increment "{0}" is not positive and non-zero.'.format(time_increment), file=sys.stderr)
+        _runtime_warning('The time increment "{0}" is not positive and non-zero.'.format(time_increment))
         return
     
     if time_young > time_old:
-        print('The young time {0} is older (larger) than the old time {1}.'.format(time_young, time_old), file=sys.stderr)
+        _runtime_warning('The young time {0} is older (larger) than the old time {1}.'.format(time_young, time_old))
         return
     
     rotation_model = pygplates.RotationModel(rotation_filenames)
@@ -469,9 +474,8 @@ if __name__ == '__main__':
     
     # Check the imported pygplates version.
     if not hasattr(pygplates, 'Version') or pygplates.Version.get_imported_version() < PYGPLATES_VERSION_REQUIRED:
-        print('{0}: Error - imported pygplates version {1} but version {2} or greater is required'.format(
-                os.path.basename(__file__), pygplates.Version.get_imported_version(), PYGPLATES_VERSION_REQUIRED),
-            file=sys.stderr)
+        _runtime_warning('{0}: Error - imported pygplates version {1} but version {2} or greater is required'.format(
+                os.path.basename(__file__), pygplates.Version.get_imported_version(), PYGPLATES_VERSION_REQUIRED))
         sys.exit(1)
     
     
