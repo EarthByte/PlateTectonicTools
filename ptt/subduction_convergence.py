@@ -37,6 +37,9 @@ def _runtime_warning(message_string):
 # Required pygplates version.
 PYGPLATES_VERSION_REQUIRED = pygplates.Version(12)
 
+# If we have pyGPlates version 22 or above then we can handle topological lines (can get their sub-sub-segment plate IDs).
+CAN_HANDLE_TOPOLOGICAL_LINES = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(22))
+
 # The default threshold sampling distance along subduction zones.
 DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES = 0.5
 DEFAULT_THRESHOLD_SAMPLING_DISTANCE_KMS = math.radians(DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES) * pygplates.Earth.equatorial_radius_in_kms
@@ -231,30 +234,51 @@ def subduction_convergence(
             # even in a non-deforming model due to smaller plates, not modelled by topologies, moving
             # differently than the larger topological plate being modelled - and the subduction zone line
             # having plate IDs of the smaller plates near them. For that reason we use the plate ID
-            # of the subduction zone line whenever we can. Since some subduction zone lines can be
-            # topological lines, they might actually be deforming (or intended to be deforming) and
-            # hence their plate ID is not meaningful or at least we can't be sure whether it will
-            # be zero or the overriding plate (or something else). So if the subduction zone line
-            # is a topological line then we'll use the overriding plate ID instead.
+            # of the subduction zone line whenever we can.
             #
-            if isinstance(shared_boundary_section.get_topological_section(), pygplates.ResolvedTopologicalLine):
-                subduction_zone_plate_id = overriding_plate_id
+            # If the current shared sub-segment is part of a topological line then we obtain its sub-sub-segments
+            # (if we have pyGPlates revision 22 or above). This is because subduction zone lines that are
+            # topological lines might actually be deforming (or intended to be deforming) and hence their
+            # plate ID is not meaningful or at least we can't be sure whether it will be zero or the
+            # overriding plate (or something else). In this case we look at the plate IDs of the
+            # sub-sub-segments. However if we have pyGPlates revision 21 or below then we cannot do this,
+            # in which case (for a topological line) we'll use the overriding plate ID instead.
+            #
+            sub_segments_of_topological_line_sub_segment = shared_sub_segment.get_sub_segments() if CAN_HANDLE_TOPOLOGICAL_LINES else None
+            if sub_segments_of_topological_line_sub_segment:
+                for sub_sub_segment in sub_segments_of_topological_line_sub_segment:
+                    sub_segment_geometry = sub_sub_segment.get_resolved_geometry()
+                    subduction_zone_plate_id = sub_sub_segment.get_feature().get_reconstruction_plate_id()
+                    _sub_segment_subduction_convergence(
+                            output_data,
+                            time,
+                            sub_segment_geometry,
+                            subduction_zone_plate_id,
+                            overriding_plate_id,
+                            subducting_plate_id,
+                            subducting_normal_reversal,
+                            threshold_sampling_distance_radians,
+                            velocity_delta_time,
+                            rotation_model,
+                            anchor_plate_id)
             else:
-                subduction_zone_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
-            
-            sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
-            _sub_segment_subduction_convergence(
-                    output_data,
-                    time,
-                    sub_segment_geometry,
-                    subduction_zone_plate_id,
-                    overriding_plate_id,
-                    subducting_plate_id,
-                    subducting_normal_reversal,
-                    threshold_sampling_distance_radians,
-                    velocity_delta_time,
-                    rotation_model,
-                    anchor_plate_id)
+                sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
+                if isinstance(shared_boundary_section.get_topological_section(), pygplates.ResolvedTopologicalLine):
+                    subduction_zone_plate_id = overriding_plate_id
+                else:
+                    subduction_zone_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
+                _sub_segment_subduction_convergence(
+                        output_data,
+                        time,
+                        sub_segment_geometry,
+                        subduction_zone_plate_id,
+                        overriding_plate_id,
+                        subducting_plate_id,
+                        subducting_normal_reversal,
+                        threshold_sampling_distance_radians,
+                        velocity_delta_time,
+                        rotation_model,
+                        anchor_plate_id)
     
     # Return data sorted since it's easier to compare results (when at least lon/lat is sorted).
     return sorted(output_data)
