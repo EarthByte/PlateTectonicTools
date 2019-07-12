@@ -124,7 +124,7 @@ def subduction_convergence(
     
     Each sampled point along subduction zones returns the following information:
     
-    * subducting convergence (relative to overriding plate) velocity magnitude (in cm/yr)
+    * subducting convergence (relative to subduction zone) velocity magnitude (in cm/yr)
     * subducting convergence velocity obliquity angle (angle between subduction zone normal vector and convergence velocity vector)
     * subduction zone absolute (relative to anchor plate) velocity magnitude (in cm/yr)
     * subduction zone absolute velocity obliquity angle (angle between subduction zone normal vector and absolute velocity vector)
@@ -235,42 +235,55 @@ def subduction_convergence(
             else:
                 subduction_zone_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
             
-            # Get the rotation of the subducting plate relative to the overriding plate
+            # Get the rotation of the subducting plate relative to the subduction zone line
             # from 'time + velocity_delta_time' to 'time'.
             convergence_relative_stage_rotation = rotation_model.get_rotation(
                     time,
                     subducting_plate_id,
                     time + velocity_delta_time,
-                    overriding_plate_id,
+                    subduction_zone_plate_id,
                     anchor_plate_id=anchor_plate_id)
             #
-            # The subduction zones have been reconstructed using the rotation "R(0->t2,A->M)":
+            # In the following:
+            #   * T is for Trench (subduction zone line)
+            #   * S is subducting plate
+            #   * A is anchor plate
             #
-            #   reconstructed_geometry = R(0->t2,A->M) * present_day_geometry
+            # The subduction zones have been reconstructed using the rotation "R(0->t,A->T)":
             #
-            # We can write "R(0->t2,A->M)" in terms of the stage rotation "R(t1->t2,F->M)" as:
+            #   reconstructed_geometry = R(0->t,A->T) * present_day_geometry
             #
-            #   R(0->t2,A->M) = R(0->t2,A->F) * R(0->t2,F->M)
-            #                 = R(0->t2,A->F) * R(t1->t2,F->M) * R(0->t1,F->M)
-            #                 = R(0->t2,A->F) * stage_rotation * R(0->t1,F->M)
+            # We can write "R(0->t,A->T)" in terms of the convergence stage rotation "R(t+dt->t,T->S)" as:
             #
-            # ...where 't1' is 't+1' and 't2' is 't' (ie, from 't1' to 't2').
+            #   R(0->t,A->T)  = R(0->t,A->S) * R(0->t,S->T)
+            #                 = R(0->t,A->S) * inverse[R(0->t,T->S)]
+            #                 = R(0->t,A->S) * inverse[R(t+dt->t,T->S) * R(0->t+dt,T->S)]
+            #                 = R(0->t,A->S) * inverse[stage_rotation * R(0->t+dt,T->S)]
+            #                 = R(0->t,A->S) * inverse[R(0->t+dt,T->S)] * inverse[stage_rotation]
+            #                 = R(0->t,A->S) * R(0->t+dt,S->T) * inverse[stage_rotation]
             #
-            # So to get the *reconstructed* geometry into the stage rotation reference frame
-            # we need to rotate it by "inverse[R(0->t2,A->F)]":
+            # So to get the *reconstructed* subduction line geometry into the stage rotation reference frame
+            # we need to rotate it by "inverse[R(0->t,A->S) * R(0->t+dt,S->T)]":
             #
-            #   reconstructed_geometry = R(0->t2,A->F) * stage_rotation * R(0->t1,F->M) * present_day_geometry
-            #   inverse[R(0->t2,A->F)] * reconstructed_geometry = stage_rotation * R(0->t1,F->M) * present_day_geometry
+            #   reconstructed_geometry = R(0->t,A->T) * present_day_geometry
+            #                          = R(0->t,A->S) * R(0->t+dt,S->T) * inverse[stage_rotation] * present_day_geometry
+            #   inverse[R(0->t,A->S) * R(0->t+dt,S->T)] * reconstructed_geometry = inverse[stage_rotation] * present_day_geometry
             #
             # Once we've done that we can calculate the velocities of those geometry points
             # using the stage rotation. Then the velocities need to be rotated back from the
-            # stage rotation reference frame using the rotation "R(0->t2,A->F)".
+            # stage rotation reference frame using the rotation "R(0->t,A->S) * R(0->t+dt,S->T)".
             # 
-            from_stage_frame_relative_to_overriding = rotation_model.get_rotation(
-                    time,
-                    overriding_plate_id,
-                    anchor_plate_id=anchor_plate_id)
-            to_stage_frame_relative_to_overriding = from_stage_frame_relative_to_overriding.get_inverse()
+            from_convergence_stage_frame = (
+                rotation_model.get_rotation(
+                        time,
+                        subducting_plate_id,
+                        anchor_plate_id=anchor_plate_id) *
+                rotation_model.get_rotation(
+                        time + velocity_delta_time,
+                        subduction_zone_plate_id,
+                        fixed_plate_id=subducting_plate_id,
+                        anchor_plate_id=anchor_plate_id))
+            to_convergence_stage_frame = from_convergence_stage_frame.get_inverse()
             
             # Get the rotation of the subduction zone relative to the anchor plate
             # from 'time + velocity_delta_time' to 'time'.
@@ -318,23 +331,22 @@ def subduction_convergence(
             subducting_arc_local_normals = pygplates.LocalCartesian.convert_from_geocentric_to_magnitude_azimuth_inclination(
                     arc_midpoints, subducting_arc_normals)
             
-            # Calculate the convergence velocities, and subduction zone velocities relative to
-            # overriding plate, at the arc midpoints.
+            # Calculate the convergence velocities at the arc midpoints.
             #
-            # Note; We need to convert the reconstructed geometry points into the stage rotation
+            # Note; We need to convert the reconstructed geometry points into the convergence stage rotation
             # reference frame to calculate velocities and then convert the velocities using the
             # reverse transform as mentioned above.
-            arc_midpoints_in_stage_frame_relative_to_overriding = [
-                    to_stage_frame_relative_to_overriding * arc_midpoint
+            arc_midpoints_in_convergence_stage_frame = [
+                    to_convergence_stage_frame * arc_midpoint
                             for arc_midpoint in arc_midpoints]
-            convergence_velocity_vectors_in_stage_frame_relative_to_overriding = pygplates.calculate_velocities(
-                    arc_midpoints_in_stage_frame_relative_to_overriding,
+            convergence_velocity_vectors_in_convergence_stage_frame = pygplates.calculate_velocities(
+                    arc_midpoints_in_convergence_stage_frame,
                     convergence_relative_stage_rotation,
                     velocity_delta_time,
                     pygplates.VelocityUnits.cms_per_yr)
             convergence_velocity_vectors = [
-                    from_stage_frame_relative_to_overriding * velocity
-                            for velocity in convergence_velocity_vectors_in_stage_frame_relative_to_overriding]
+                    from_convergence_stage_frame * velocity
+                            for velocity in convergence_velocity_vectors_in_convergence_stage_frame]
             
             # Calculate the absolute velocities at the arc midpoints.
             absolute_velocity_vectors = pygplates.calculate_velocities(
@@ -485,7 +497,7 @@ if __name__ == '__main__':
     For each time (over a range of times) an output xy file is generated containing the resolved subduction zones
     (with point locations as the first two columns x and y) and the following convergence rate parameters in subsequent columns:
     
-      - subducting convergence (relative to overriding plate) velocity magnitude (in cm/yr)
+      - subducting convergence (relative to subduction zone) velocity magnitude (in cm/yr)
       - subducting convergence velocity obliquity angle (angle between subduction zone normal vector and convergence velocity vector)
       - subduction zone absolute (relative to anchor plate) velocity magnitude (in cm/yr)
       - subduction zone absolute velocity obliquity angle (angle between subduction zone normal vector and absolute velocity vector)
