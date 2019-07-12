@@ -218,6 +218,13 @@ def subduction_convergence(
             overriding_plate_id = overriding_plate.get_feature().get_reconstruction_plate_id()
             subducting_plate_id = subducting_plate.get_feature().get_reconstruction_plate_id()
             
+            # We need to reverse the subducting_normal vector direction if overriding plate is to
+            # the right of the subducting line since great circle arc normal is always to the left.
+            if subduction_polarity == 'Left':
+                subducting_normal_reversal = 1
+            else:
+                subducting_normal_reversal = -1
+            
             # The plate ID of the subduction zone line (as opposed to the subducting plate).
             #
             # Update: The plate IDs of the subduction zone line and overriding plate can differ
@@ -235,193 +242,214 @@ def subduction_convergence(
             else:
                 subduction_zone_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
             
-            # Get the rotation of the subducting plate relative to the subduction zone line
-            # from 'time + velocity_delta_time' to 'time'.
-            convergence_relative_stage_rotation = rotation_model.get_rotation(
+            sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
+            _sub_segment_subduction_convergence(
+                    output_data,
                     time,
+                    sub_segment_geometry,
+                    subduction_zone_plate_id,
+                    overriding_plate_id,
                     subducting_plate_id,
-                    time + velocity_delta_time,
-                    subduction_zone_plate_id,
-                    anchor_plate_id=anchor_plate_id)
-            #
-            # In the following:
-            #   * T is for Trench (subduction zone line)
-            #   * S is subducting plate
-            #   * A is anchor plate
-            #
-            # The subduction zones have been reconstructed using the rotation "R(0->t,A->T)":
-            #
-            #   reconstructed_geometry = R(0->t,A->T) * present_day_geometry
-            #
-            # We can write "R(0->t,A->T)" in terms of the convergence stage rotation "R(t+dt->t,T->S)" as:
-            #
-            #   R(0->t,A->T)  = R(0->t,A->S) * R(0->t,S->T)
-            #                 = R(0->t,A->S) * inverse[R(0->t,T->S)]
-            #                 = R(0->t,A->S) * inverse[R(t+dt->t,T->S) * R(0->t+dt,T->S)]
-            #                 = R(0->t,A->S) * inverse[stage_rotation * R(0->t+dt,T->S)]
-            #                 = R(0->t,A->S) * inverse[R(0->t+dt,T->S)] * inverse[stage_rotation]
-            #                 = R(0->t,A->S) * R(0->t+dt,S->T) * inverse[stage_rotation]
-            #
-            # So to get the *reconstructed* subduction line geometry into the stage rotation reference frame
-            # we need to rotate it by "inverse[R(0->t,A->S) * R(0->t+dt,S->T)]":
-            #
-            #   reconstructed_geometry = R(0->t,A->T) * present_day_geometry
-            #                          = R(0->t,A->S) * R(0->t+dt,S->T) * inverse[stage_rotation] * present_day_geometry
-            #   inverse[R(0->t,A->S) * R(0->t+dt,S->T)] * reconstructed_geometry = inverse[stage_rotation] * present_day_geometry
-            #
-            # Once we've done that we can calculate the velocities of those geometry points
-            # using the stage rotation. Then the velocities need to be rotated back from the
-            # stage rotation reference frame using the rotation "R(0->t,A->S) * R(0->t+dt,S->T)".
-            # 
-            from_convergence_stage_frame = (
-                rotation_model.get_rotation(
-                        time,
-                        subducting_plate_id,
-                        anchor_plate_id=anchor_plate_id) *
-                rotation_model.get_rotation(
-                        time + velocity_delta_time,
-                        subduction_zone_plate_id,
-                        fixed_plate_id=subducting_plate_id,
-                        anchor_plate_id=anchor_plate_id))
-            to_convergence_stage_frame = from_convergence_stage_frame.get_inverse()
-            
-            # Get the rotation of the subduction zone relative to the anchor plate
-            # from 'time + velocity_delta_time' to 'time'.
-            #
-            # Note: We don't need to convert to and from the stage rotation reference frame
-            # like the above convergence because this stage rotation is relative to the anchor plate
-            # and so the above to/from stage rotation frame conversion "R(0->t2,A->F)" is the
-            # identity rotation since the fixed plate (F) is the anchor plate (A).
-            subduction_zone_equivalent_stage_rotation = rotation_model.get_rotation(
-                    time,
-                    subduction_zone_plate_id,
-                    time + velocity_delta_time,
-                    anchor_plate_id=anchor_plate_id)
-            
-            # We need to reverse the subducting_normal vector direction if overriding plate is to
-            # the right of the subducting line since great circle arc normal is always to the left.
-            if subduction_polarity == 'Left':
-                subducting_normal_reversal = 1
-            else:
-                subducting_normal_reversal = -1
-            
-            # Ensure the shared sub-segment is tessellated to within the threshold sampling distance.
-            tessellated_shared_sub_segment_polyline = (
-                    shared_sub_segment.get_resolved_geometry().to_tessellated(threshold_sampling_distance_radians))
-            
-            # Iterate over the great circle arcs of the tessellated polyline to get the
-            # arc midpoints, lengths and subducting normals.
-            # There is an arc between each adjacent pair of points in the polyline.
-            arc_midpoints = []
-            arc_lengths = []
-            subducting_arc_normals = []
-            for arc in tessellated_shared_sub_segment_polyline.get_segments():
-                if not arc.is_zero_length():
-                    arc_midpoints.append(arc.get_arc_point(0.5))
-                    arc_lengths.append(arc.get_arc_length())
-                    # The normal to the subduction zone in the direction of subduction (towards overriding plate).
-                    subducting_arc_normals.append(subducting_normal_reversal * arc.get_great_circle_normal())
-            
-            # Shouldn't happen, but just in case the shared sub-segment polyline coincides with a point.
-            if not arc_midpoints:
-                continue
-            
-            # The subducting arc normals relative to North (azimuth).
-            # Convert global 3D normal vectors to local (magnitude, azimuth, inclination) tuples (one tuple per point).
-            subducting_arc_local_normals = pygplates.LocalCartesian.convert_from_geocentric_to_magnitude_azimuth_inclination(
-                    arc_midpoints, subducting_arc_normals)
-            
-            # Calculate the convergence velocities at the arc midpoints.
-            #
-            # Note; We need to convert the reconstructed geometry points into the convergence stage rotation
-            # reference frame to calculate velocities and then convert the velocities using the
-            # reverse transform as mentioned above.
-            arc_midpoints_in_convergence_stage_frame = [
-                    to_convergence_stage_frame * arc_midpoint
-                            for arc_midpoint in arc_midpoints]
-            convergence_velocity_vectors_in_convergence_stage_frame = pygplates.calculate_velocities(
-                    arc_midpoints_in_convergence_stage_frame,
-                    convergence_relative_stage_rotation,
+                    subducting_normal_reversal,
+                    threshold_sampling_distance_radians,
                     velocity_delta_time,
-                    pygplates.VelocityUnits.cms_per_yr)
-            convergence_velocity_vectors = [
-                    from_convergence_stage_frame * velocity
-                            for velocity in convergence_velocity_vectors_in_convergence_stage_frame]
-            
-            # Calculate the absolute velocities at the arc midpoints.
-            absolute_velocity_vectors = pygplates.calculate_velocities(
-                    arc_midpoints, subduction_zone_equivalent_stage_rotation,
-                    velocity_delta_time, pygplates.VelocityUnits.cms_per_yr)
-            
-            for arc_index in range(len(arc_midpoints)):
-                arc_midpoint = arc_midpoints[arc_index]
-                arc_length = arc_lengths[arc_index]
-                subducting_arc_normal = subducting_arc_normals[arc_index]
-                subducting_arc_normal_azimuth = subducting_arc_local_normals[arc_index][1]
-                lat, lon = arc_midpoint.to_lat_lon()
-                
-                # The direction towards which we rotate from the subducting normal in a clockwise fashion.
-                clockwise_direction = pygplates.Vector3D.cross(subducting_arc_normal, arc_midpoint.to_xyz())
-                
-                # Calculate the convergence rate parameters.
-                convergence_velocity_vector = convergence_velocity_vectors[arc_index]
-                if convergence_velocity_vector.is_zero_magnitude():
-                    convergence_velocity_magnitude = 0
-                    convergence_obliquity_degrees = 0
-                else:
-                    convergence_velocity_magnitude = convergence_velocity_vector.get_magnitude()
-                    convergence_obliquity_degrees = math.degrees(pygplates.Vector3D.angle_between(
-                            convergence_velocity_vector, subducting_arc_normal))
-                    # Anti-clockwise direction has range (0, -180) instead of (0, 180).
-                    if pygplates.Vector3D.dot(convergence_velocity_vector, clockwise_direction) < 0:
-                        convergence_obliquity_degrees = -convergence_obliquity_degrees
-                    
-                    # See if plates are diverging (moving away from each other).
-                    # If plates are diverging (moving away from each other) then make the
-                    # velocity magnitude negative to indicate this. This could be inferred from
-                    # the obliquity but it seems this is the standard way to output convergence rate.
-                    if math.fabs(convergence_obliquity_degrees) > 90:
-                        convergence_velocity_magnitude = -convergence_velocity_magnitude
-                
-                # Calculate the absolute rate parameters.
-                absolute_velocity_vector = absolute_velocity_vectors[arc_index]
-                if absolute_velocity_vector.is_zero_magnitude():
-                    absolute_velocity_magnitude = 0
-                    absolute_obliquity_degrees = 0
-                else:
-                    absolute_velocity_magnitude = absolute_velocity_vector.get_magnitude()
-                    absolute_obliquity_degrees = math.degrees(pygplates.Vector3D.angle_between(
-                            absolute_velocity_vector, subducting_arc_normal))
-                    # Anti-clockwise direction has range (0, -180) instead of (0, 180).
-                    if pygplates.Vector3D.dot(absolute_velocity_vector, clockwise_direction) < 0:
-                        absolute_obliquity_degrees = -absolute_obliquity_degrees
-                    
-                    # See if the subduction zone absolute motion is heading in the direction of the
-                    # overriding plate. If it is then make the velocity magnitude negative to
-                    # indicate this. This could be inferred from the obliquity but it seems this
-                    # is the standard way to output convergence rate.
-                    #
-                    # Note that we are not calculating the motion of the subduction zone
-                    # relative to the overriding plate - they are usually attached to each other
-                    # and hence wouldn't move relative to each other.
-                    if math.fabs(absolute_obliquity_degrees) < 90:
-                        absolute_velocity_magnitude = -absolute_velocity_magnitude
-                
-                # The data will be output in GMT format (ie, lon first, then lat, etc).
-                output_data.append((
-                        lon,
-                        lat,
-                        convergence_velocity_magnitude,
-                        convergence_obliquity_degrees,
-                        absolute_velocity_magnitude,
-                        absolute_obliquity_degrees,
-                        math.degrees(arc_length),
-                        math.degrees(subducting_arc_normal_azimuth),
-                        subducting_plate_id,
-                        overriding_plate_id))
+                    rotation_model,
+                    anchor_plate_id)
     
     # Return data sorted since it's easier to compare results (when at least lon/lat is sorted).
     return sorted(output_data)
+
+
+def _sub_segment_subduction_convergence(
+        output_data,
+        time,
+        sub_segment_geometry,
+        subduction_zone_plate_id,
+        overriding_plate_id,
+        subducting_plate_id,
+        subducting_normal_reversal,
+        threshold_sampling_distance_radians,
+        velocity_delta_time,
+        rotation_model,
+        anchor_plate_id):
+    
+    # Get the rotation of the subducting plate relative to the subduction zone line
+    # from 'time + velocity_delta_time' to 'time'.
+    convergence_relative_stage_rotation = rotation_model.get_rotation(
+            time,
+            subducting_plate_id,
+            time + velocity_delta_time,
+            subduction_zone_plate_id,
+            anchor_plate_id=anchor_plate_id)
+    #
+    # In the following:
+    #   * T is for Trench (subduction zone line)
+    #   * S is subducting plate
+    #   * A is anchor plate
+    #
+    # The subduction zones have been reconstructed using the rotation "R(0->t,A->T)":
+    #
+    #   reconstructed_geometry = R(0->t,A->T) * present_day_geometry
+    #
+    # We can write "R(0->t,A->T)" in terms of the convergence stage rotation "R(t+dt->t,T->S)" as:
+    #
+    #   R(0->t,A->T)  = R(0->t,A->S) * R(0->t,S->T)
+    #                 = R(0->t,A->S) * inverse[R(0->t,T->S)]
+    #                 = R(0->t,A->S) * inverse[R(t+dt->t,T->S) * R(0->t+dt,T->S)]
+    #                 = R(0->t,A->S) * inverse[stage_rotation * R(0->t+dt,T->S)]
+    #                 = R(0->t,A->S) * inverse[R(0->t+dt,T->S)] * inverse[stage_rotation]
+    #                 = R(0->t,A->S) * R(0->t+dt,S->T) * inverse[stage_rotation]
+    #
+    # So to get the *reconstructed* subduction line geometry into the stage rotation reference frame
+    # we need to rotate it by "inverse[R(0->t,A->S) * R(0->t+dt,S->T)]":
+    #
+    #   reconstructed_geometry = R(0->t,A->T) * present_day_geometry
+    #                          = R(0->t,A->S) * R(0->t+dt,S->T) * inverse[stage_rotation] * present_day_geometry
+    #   inverse[R(0->t,A->S) * R(0->t+dt,S->T)] * reconstructed_geometry = inverse[stage_rotation] * present_day_geometry
+    #
+    # Once we've done that we can calculate the velocities of those geometry points
+    # using the stage rotation. Then the velocities need to be rotated back from the
+    # stage rotation reference frame using the rotation "R(0->t,A->S) * R(0->t+dt,S->T)".
+    # 
+    from_convergence_stage_frame = (
+        rotation_model.get_rotation(
+                time,
+                subducting_plate_id,
+                anchor_plate_id=anchor_plate_id) *
+        rotation_model.get_rotation(
+                time + velocity_delta_time,
+                subduction_zone_plate_id,
+                fixed_plate_id=subducting_plate_id,
+                anchor_plate_id=anchor_plate_id))
+    to_convergence_stage_frame = from_convergence_stage_frame.get_inverse()
+    
+    # Get the rotation of the subduction zone relative to the anchor plate
+    # from 'time + velocity_delta_time' to 'time'.
+    #
+    # Note: We don't need to convert to and from the stage rotation reference frame
+    # like the above convergence because this stage rotation is relative to the anchor plate
+    # and so the above to/from stage rotation frame conversion "R(0->t2,A->F)" is the
+    # identity rotation since the fixed plate (F) is the anchor plate (A).
+    subduction_zone_equivalent_stage_rotation = rotation_model.get_rotation(
+            time,
+            subduction_zone_plate_id,
+            time + velocity_delta_time,
+            anchor_plate_id=anchor_plate_id)
+    
+    # Ensure the shared sub-segment is tessellated to within the threshold sampling distance.
+    tessellated_shared_sub_segment_polyline = (
+            sub_segment_geometry.to_tessellated(threshold_sampling_distance_radians))
+    
+    # Iterate over the great circle arcs of the tessellated polyline to get the
+    # arc midpoints, lengths and subducting normals.
+    # There is an arc between each adjacent pair of points in the polyline.
+    arc_midpoints = []
+    arc_lengths = []
+    subducting_arc_normals = []
+    for arc in tessellated_shared_sub_segment_polyline.get_segments():
+        if not arc.is_zero_length():
+            arc_midpoints.append(arc.get_arc_point(0.5))
+            arc_lengths.append(arc.get_arc_length())
+            # The normal to the subduction zone in the direction of subduction (towards overriding plate).
+            subducting_arc_normals.append(subducting_normal_reversal * arc.get_great_circle_normal())
+    
+    # Shouldn't happen, but just in case the shared sub-segment polyline coincides with a point.
+    if not arc_midpoints:
+        return
+    
+    # The subducting arc normals relative to North (azimuth).
+    # Convert global 3D normal vectors to local (magnitude, azimuth, inclination) tuples (one tuple per point).
+    subducting_arc_local_normals = pygplates.LocalCartesian.convert_from_geocentric_to_magnitude_azimuth_inclination(
+            arc_midpoints, subducting_arc_normals)
+    
+    # Calculate the convergence velocities at the arc midpoints.
+    #
+    # Note; We need to convert the reconstructed geometry points into the convergence stage rotation
+    # reference frame to calculate velocities and then convert the velocities using the
+    # reverse transform as mentioned above.
+    arc_midpoints_in_convergence_stage_frame = [
+            to_convergence_stage_frame * arc_midpoint
+                    for arc_midpoint in arc_midpoints]
+    convergence_velocity_vectors_in_convergence_stage_frame = pygplates.calculate_velocities(
+            arc_midpoints_in_convergence_stage_frame,
+            convergence_relative_stage_rotation,
+            velocity_delta_time,
+            pygplates.VelocityUnits.cms_per_yr)
+    convergence_velocity_vectors = [
+            from_convergence_stage_frame * velocity
+                    for velocity in convergence_velocity_vectors_in_convergence_stage_frame]
+    
+    # Calculate the absolute velocities at the arc midpoints.
+    absolute_velocity_vectors = pygplates.calculate_velocities(
+            arc_midpoints, subduction_zone_equivalent_stage_rotation,
+            velocity_delta_time, pygplates.VelocityUnits.cms_per_yr)
+    
+    for arc_index in range(len(arc_midpoints)):
+        arc_midpoint = arc_midpoints[arc_index]
+        arc_length = arc_lengths[arc_index]
+        subducting_arc_normal = subducting_arc_normals[arc_index]
+        subducting_arc_normal_azimuth = subducting_arc_local_normals[arc_index][1]
+        lat, lon = arc_midpoint.to_lat_lon()
+        
+        # The direction towards which we rotate from the subducting normal in a clockwise fashion.
+        clockwise_direction = pygplates.Vector3D.cross(subducting_arc_normal, arc_midpoint.to_xyz())
+        
+        # Calculate the convergence rate parameters.
+        convergence_velocity_vector = convergence_velocity_vectors[arc_index]
+        if convergence_velocity_vector.is_zero_magnitude():
+            convergence_velocity_magnitude = 0
+            convergence_obliquity_degrees = 0
+        else:
+            convergence_velocity_magnitude = convergence_velocity_vector.get_magnitude()
+            convergence_obliquity_degrees = math.degrees(pygplates.Vector3D.angle_between(
+                    convergence_velocity_vector, subducting_arc_normal))
+            # Anti-clockwise direction has range (0, -180) instead of (0, 180).
+            if pygplates.Vector3D.dot(convergence_velocity_vector, clockwise_direction) < 0:
+                convergence_obliquity_degrees = -convergence_obliquity_degrees
+            
+            # See if plates are diverging (moving away from each other).
+            # If plates are diverging (moving away from each other) then make the
+            # velocity magnitude negative to indicate this. This could be inferred from
+            # the obliquity but it seems this is the standard way to output convergence rate.
+            if math.fabs(convergence_obliquity_degrees) > 90:
+                convergence_velocity_magnitude = -convergence_velocity_magnitude
+        
+        # Calculate the absolute rate parameters.
+        absolute_velocity_vector = absolute_velocity_vectors[arc_index]
+        if absolute_velocity_vector.is_zero_magnitude():
+            absolute_velocity_magnitude = 0
+            absolute_obliquity_degrees = 0
+        else:
+            absolute_velocity_magnitude = absolute_velocity_vector.get_magnitude()
+            absolute_obliquity_degrees = math.degrees(pygplates.Vector3D.angle_between(
+                    absolute_velocity_vector, subducting_arc_normal))
+            # Anti-clockwise direction has range (0, -180) instead of (0, 180).
+            if pygplates.Vector3D.dot(absolute_velocity_vector, clockwise_direction) < 0:
+                absolute_obliquity_degrees = -absolute_obliquity_degrees
+            
+            # See if the subduction zone absolute motion is heading in the direction of the
+            # overriding plate. If it is then make the velocity magnitude negative to
+            # indicate this. This could be inferred from the obliquity but it seems this
+            # is the standard way to output convergence rate.
+            #
+            # Note that we are not calculating the motion of the subduction zone
+            # relative to the overriding plate - they are usually attached to each other
+            # and hence wouldn't move relative to each other.
+            if math.fabs(absolute_obliquity_degrees) < 90:
+                absolute_velocity_magnitude = -absolute_velocity_magnitude
+        
+        # The data will be output in GMT format (ie, lon first, then lat, etc).
+        output_data.append((
+                lon,
+                lat,
+                convergence_velocity_magnitude,
+                convergence_obliquity_degrees,
+                absolute_velocity_magnitude,
+                absolute_obliquity_degrees,
+                math.degrees(arc_length),
+                math.degrees(subducting_arc_normal_azimuth),
+                subducting_plate_id,
+                overriding_plate_id))
 
 
 def write_output_file(output_filename, output_data):
