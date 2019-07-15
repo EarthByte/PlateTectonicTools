@@ -602,9 +602,18 @@ def subduction_convergence_over_time(
         if output_data:
             output_filename = '{0}_{1:0.2f}.{2}'.format(output_filename_prefix, time, output_filename_extension)
             write_output_file(output_filename, output_data)
+            
+            # Also keep track of convergence data if we need to write out a GPML file.
+            if output_gpml_filename:
+                coverage_feature = create_coverage_feature_from_convergence_data(output_data, time)
+                coverage_features.append(coverage_feature)
 
         # Increment the time further into the past.
         time += time_increment
+    
+    if output_gpml_filename:
+        # Write out all coverage features to a single GPML file.
+        pygplates.FeatureCollection(coverage_features).write(output_gpml_filename)
     
     return 0 # Success
 
