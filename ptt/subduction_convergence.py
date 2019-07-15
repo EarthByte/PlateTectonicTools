@@ -244,11 +244,28 @@ def subduction_convergence(
             # sub-sub-segments. However if we have pyGPlates revision 21 or below then we cannot do this,
             # in which case (for a topological line) we'll use the overriding plate ID instead.
             #
-            sub_segments_of_topological_line_sub_segment = shared_sub_segment.get_sub_segments() if CAN_HANDLE_TOPOLOGICAL_LINES else None
-            if sub_segments_of_topological_line_sub_segment:
-                for sub_sub_segment in sub_segments_of_topological_line_sub_segment:
-                    sub_segment_geometry = sub_sub_segment.get_resolved_geometry()
-                    subduction_zone_plate_id = sub_sub_segment.get_feature().get_reconstruction_plate_id()
+            if CAN_HANDLE_TOPOLOGICAL_LINES:
+                sub_segments_of_topological_line_sub_segment = shared_sub_segment.get_sub_segments()
+                if sub_segments_of_topological_line_sub_segment:
+                    # Iterate over the sub-sub-segments associated with the topological line.
+                    for sub_sub_segment in sub_segments_of_topological_line_sub_segment:
+                        subduction_zone_plate_id = sub_sub_segment.get_feature().get_reconstruction_plate_id()
+                        sub_segment_geometry = sub_sub_segment.get_resolved_geometry()
+                        _sub_segment_subduction_convergence(
+                                output_data,
+                                time,
+                                sub_segment_geometry,
+                                subduction_zone_plate_id,
+                                overriding_plate_id,
+                                subducting_plate_id,
+                                subducting_normal_reversal,
+                                threshold_sampling_distance_radians,
+                                velocity_delta_time,
+                                rotation_model,
+                                anchor_plate_id)
+                else: # It's not a topological line...
+                    subduction_zone_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
+                    sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
                     _sub_segment_subduction_convergence(
                             output_data,
                             time,
@@ -261,12 +278,12 @@ def subduction_convergence(
                             velocity_delta_time,
                             rotation_model,
                             anchor_plate_id)
-            else:
-                sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
+            else: # Cannot handle topological lines (so use overriding plate ID when one is detected)...
                 if isinstance(shared_boundary_section.get_topological_section(), pygplates.ResolvedTopologicalLine):
                     subduction_zone_plate_id = overriding_plate_id
                 else:
                     subduction_zone_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
+                sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
                 _sub_segment_subduction_convergence(
                         output_data,
                         time,
