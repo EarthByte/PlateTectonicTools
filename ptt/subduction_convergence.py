@@ -499,6 +499,60 @@ def write_output_file(output_filename, output_data):
             output_file.write(' '.join(str(item) for item in output_line) + '\n')
 
 
+def create_coverage_feature_from_convergence_data(
+        subduction_convergence_data,
+        time):
+    """Create a feature with a coverage geometry containing the calculated convergence and absolute velocity data.
+    
+    Parameters
+    ----------
+    subduction_convergence_data : list of tuples
+        The subduction convergence data calculated by :func:`subduction_convergence`.
+        Each tuple in the list contains the calculated data for a single sample point on a subduction zone line.
+    time: float
+        The reconstruction time associated with the subduction convergence data.
+    
+    Returns
+    -------
+    pygplates.Feature
+        The feature with a coverage geometry containing the calculated convergence and absolute velocity data.
+    """
+    
+    # Convert the list of tuples (one tuple per sample point) into a tuple of lists (one list per data parameter).
+    (all_lon,
+     all_lat,
+     all_convergence_velocity_magnitude_cm_per_yr,
+     all_convergence_obliquity_degrees,
+     all_absolute_velocity_magnitude_cm_per_yr,
+     all_absolute_obliquity_degrees,
+     all_subducting_length_degrees,
+     all_subducting_arc_normal_azimuth_degrees,
+     all_subducting_plate_id,
+     all_overriding_plate_id) = zip(*subduction_convergence_data)
+    
+    # Put all convergence data for the current reconstruction time into a single feature.
+    coverage_feature = pygplates.Feature()
+    
+    # Make it only appear at 'time'.
+    coverage_feature.set_valid_time(time + 0.5, time - 0.5)
+    
+    # Add each data parameter as a separate scalar coverage.
+    coverage_geometry = pygplates.MultiPointOnSphere(zip(all_lat, all_lon))
+    coverage_scalars = {
+        pygplates.ScalarType.create_gpml('ConvergenceVelocityMagnitude') : all_convergence_velocity_magnitude_cm_per_yr,
+        pygplates.ScalarType.create_gpml('ConvergenceObliquityDegrees') : all_convergence_obliquity_degrees,
+        pygplates.ScalarType.create_gpml('AbsoluteVelocityMagnitude') : all_absolute_velocity_magnitude_cm_per_yr,
+        pygplates.ScalarType.create_gpml('AbsoluteObliquityDegrees') : all_absolute_obliquity_degrees,
+        pygplates.ScalarType.create_gpml('SubductingLengthDegrees') : all_subducting_length_degrees,
+        pygplates.ScalarType.create_gpml('SubductingArcNormalAzimuthDegrees') : all_subducting_arc_normal_azimuth_degrees,
+        pygplates.ScalarType.create_gpml('SubductingPlateId') : all_subducting_plate_id,
+        pygplates.ScalarType.create_gpml('OverridingPlateId') : all_overriding_plate_id,
+    }
+    coverage_feature.set_geometry((coverage_geometry, coverage_scalars))
+    
+    return coverage_feature
+
+
 def subduction_convergence_over_time(
         output_filename_prefix,
         output_filename_extension,
@@ -509,7 +563,8 @@ def subduction_convergence_over_time(
         time_old,
         time_increment,
         velocity_delta_time = 1.0,
-        anchor_plate_id = 0):
+        anchor_plate_id = 0,
+        output_gpml_filename = None):
     
     if time_increment <= 0:
         _runtime_warning('The time increment "{0}" is not positive and non-zero.'.format(time_increment))
@@ -524,6 +579,9 @@ def subduction_convergence_over_time(
     # Read/parse the topological features once so we're not doing at each time iteration.
     topology_features = [pygplates.FeatureCollection(topology_filename)
             for topology_filename in topology_filenames]
+    
+    if output_gpml_filename:
+        coverage_features = []
     
     # Iterate over the time rage.
     time = time_young
@@ -651,6 +709,10 @@ if __name__ == '__main__':
             help='The delta time interval used to calculate velocities in My. '
                 'Defaults to {0} My.'.format(DEFAULT_VELOCITY_DELTA_TIME))
     
+    parser.add_argument('-g', '--output_gpml_filename', type=str,
+            help='Optional GPML output filename to contain the subduction convergence data for all specified times. '
+                 'This can then be loaded into GPlates to display the data as scalar coverages.')
+    
     parser.add_argument('output_filename_prefix', type=str,
             help='The output filename prefix. An output file is created for each geological time in the sequence where '
                 'the filename suffix contains the time and the filename extension.')
@@ -681,7 +743,8 @@ if __name__ == '__main__':
             args.time_range[1],
             args.time_increment,
             args.velocity_delta_time,
-            args.anchor_plate_id)
+            args.anchor_plate_id,
+            args.output_gpml_filename)
     if return_code is None:
         sys.exit(1)
         
