@@ -37,8 +37,11 @@ def _runtime_warning(message_string):
 # Required pygplates version.
 PYGPLATES_VERSION_REQUIRED = pygplates.Version(12)
 
-# If we have pyGPlates version 22 or above then we can handle topological lines (can get their sub-sub-segment plate IDs).
-CAN_HANDLE_TOPOLOGICAL_LINES = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(22))
+# PyGPlates version 22 can handle topological lines (can get their sub-sub-segment plate IDs).
+USING_PYGPLATES_VERSION_GREATER_EQUAL_22 = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(22))
+
+# PyGPlates version 23 has a method to get overriding and subducting plates.
+USING_PYGPLATES_VERSION_GREATER_EQUAL_23 = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(23))
 
 # The default threshold sampling distance along subduction zones.
 DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES = 0.5
@@ -215,9 +218,18 @@ def subduction_convergence(
         for shared_sub_segment in shared_boundary_section.get_shared_sub_segments():
         
             # Find the overriding and subducting plates on either side of the shared sub-segment.
-            overriding_and_subducting_plates = find_overriding_and_subducting_plates(shared_sub_segment, time)
-            if not overriding_and_subducting_plates:
-                continue
+            if USING_PYGPLATES_VERSION_GREATER_EQUAL_23:
+                # PyGPlates version 23 has a method to get overriding and subducting plates.
+                overriding_and_subducting_plates = shared_sub_segment.get_overriding_and_subducting_plates(True)
+                if not overriding_and_subducting_plates:
+                    _runtime_warning('Unable to find the overriding and subducting plates of the subducting sub-segment "{0}" at {1}Ma. '
+                                     'Either the subduction polarity is not properly set or there are not exactly 2 topologies sharing the sub-segment.'.format(
+                                         shared_sub_segment.get_feature().get_name(), time))
+                    continue
+            else:
+                overriding_and_subducting_plates = find_overriding_and_subducting_plates(shared_sub_segment, time)
+                if not overriding_and_subducting_plates:
+                    continue
             overriding_plate, subducting_plate, subduction_polarity = overriding_and_subducting_plates
             overriding_plate_id = overriding_plate.get_feature().get_reconstruction_plate_id()
             subducting_plate_id = subducting_plate.get_feature().get_reconstruction_plate_id()
@@ -238,14 +250,14 @@ def subduction_convergence(
             # of the subduction zone line whenever we can.
             #
             # If the current shared sub-segment is part of a topological line then we obtain its sub-sub-segments
-            # (if we have pyGPlates revision 22 or above). This is because subduction zone lines that are
+            # (if we have pyGPlates version 22 or above). This is because subduction zone lines that are
             # topological lines might actually be deforming (or intended to be deforming) and hence their
             # plate ID is not meaningful or at least we can't be sure whether it will be zero or the
             # overriding plate (or something else). In this case we look at the plate IDs of the
-            # sub-sub-segments. However if we have pyGPlates revision 21 or below then we cannot do this,
+            # sub-sub-segments. However if we have pyGPlates version 21 or below then we cannot do this,
             # in which case (for a topological line) we'll use the overriding plate ID instead.
             #
-            if CAN_HANDLE_TOPOLOGICAL_LINES:
+            if USING_PYGPLATES_VERSION_GREATER_EQUAL_22:
                 sub_segments_of_topological_line_sub_segment = shared_sub_segment.get_sub_segments()
                 if sub_segments_of_topological_line_sub_segment:
                     # Iterate over the sub-sub-segments associated with the topological line.
