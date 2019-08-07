@@ -67,8 +67,6 @@ def extract_plate_pair_stage_rotations(
     # Docstring in numpydoc format...
     """Calculate stage rotations between consecutive finite rotations in each specified plate pair.
     
-    The results are returned as a list of pygplates.FeatureCollection (one per input rotation feature collection).
-    
     Parameters
     ----------
     rotation_feature_collections : sequence of (str, or sequence of pygplates.Feature, or pygplates.FeatureCollection, or pygplates.Feature)
@@ -85,11 +83,14 @@ def extract_plate_pair_stage_rotations(
     list of pygplates.FeatureCollection
         The modified feature collections.
         Returned list is same length as ``rotation_feature_collections``.
-    """
     
-    # Convert each feature collection into a list of features for easier manipulation.
-    rotation_feature_collections = [list(pygplates.FeatureCollection(rotation_feature_collection))
-        for rotation_feature_collection in rotation_feature_collections]
+    Notes
+    -----
+    The results are returned as a list of pygplates.FeatureCollection (one per input rotation feature collection).
+    
+    Note that only the rotation features satisfying ``plate_pair_filter`` (if specified) are returned.
+    So if a returned feature collection is empty then it means all of its features were filtered out.
+    """
     
     if plate_pair_filter is None:
         plate_pair_filter = _all_filter
@@ -98,7 +99,13 @@ def extract_plate_pair_stage_rotations(
         plate_pair_filter = _is_in_plate_pair_sequence(plate_pair_filter)
     # else ...'plate_pair_filter' is a callable...
     
+    output_rotation_feature_collections = []
     for rotation_feature_collection in rotation_feature_collections:
+        # Create an empty output rotation feature collection for each input rotation feature collection.
+        # We'll only add output features when an input feature is modified.
+        output_rotation_feature_collection = []
+        output_rotation_feature_collections.append(output_rotation_feature_collection)
+        
         for rotation_feature in rotation_feature_collection:
             # Get the rotation feature information.
             total_reconstruction_pole = rotation_feature.get_total_reconstruction_pole()
@@ -111,19 +118,25 @@ def extract_plate_pair_stage_rotations(
             if not plate_pair_filter(fixed_plate_id, moving_plate_id, rotation_sequence):
                 continue
             
+            # Clone the input feature before we start making modifications.
+            # Otherwise we'll be modifying the input rotation feature (which the caller might not expect).
+            output_rotation_feature = rotation_feature.clone()
+            
+            _, _, output_rotation_sequence = output_rotation_feature.get_total_reconstruction_pole()
+            
             # Get the enabled rotation samples - ignore the disabled samples.
-            enabled_rotation_samples = rotation_sequence.get_enabled_time_samples()
-            if len(enabled_rotation_samples) < 2:
-                # Need at least two time samples to find a stage rotation (between them).
+            output_enabled_rotation_samples = output_rotation_sequence.get_enabled_time_samples()
+            if not output_enabled_rotation_samples:
+                # No time samples are enabled.
                 continue
             
-            prev_finite_rotation = enabled_rotation_samples[0].get_value().get_finite_rotation()
+            prev_finite_rotation = output_enabled_rotation_samples[0].get_value().get_finite_rotation()
             # Replace first finite rotation with identity rotation.
             # This is the stage rotation of first finite rotation (which has no previous finite rotation).
-            enabled_rotation_samples[0].get_value().set_finite_rotation(pygplates.FiniteRotation())
+            output_enabled_rotation_samples[0].get_value().set_finite_rotation(pygplates.FiniteRotation())
             
-            for rotation_sample_index in range(1, len(enabled_rotation_samples)):
-                time_sample = enabled_rotation_samples[rotation_sample_index]
+            for rotation_sample_index in range(1, len(output_enabled_rotation_samples)):
+                time_sample = output_enabled_rotation_samples[rotation_sample_index]
                 finite_rotation = time_sample.get_value().get_finite_rotation()
                 
                 # The finite rotation at current time tc is composed of finite rotation at
@@ -137,10 +150,12 @@ def extract_plate_pair_stage_rotations(
                 time_sample.get_value().set_finite_rotation(stage_rotation)
                 
                 prev_finite_rotation = finite_rotation
+            
+            output_rotation_feature_collection.append(output_rotation_feature)
     
-    # Return our (potentially) modified feature collections as a list of pygplates.FeatureCollection.
+    # Return our output feature collections as a list of pygplates.FeatureCollection.
     return [pygplates.FeatureCollection(rotation_feature_collection)
-        for rotation_feature_collection in rotation_feature_collections]
+        for rotation_feature_collection in output_rotation_feature_collections]
 
 
 def _all_filter(*args, **kwargs):
@@ -199,6 +214,9 @@ if __name__ == '__main__':
     """Calculate stage rotations between consecutive finite rotations in plate pairs.
     
     The results are written back to the input rotation files unless an output filename prefix is provided.
+    
+    Note that only the rotation features satisfying the 'plate_pairs' option (if specified) are written back.
+    So if an output rotation file is empty then it means all of its rotation features were filtered out.
 
     NOTE: Separate the positional and optional arguments with '--' (workaround for bug in argparse module).
     For example...
