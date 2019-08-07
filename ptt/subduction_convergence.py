@@ -137,7 +137,6 @@ def subduction_convergence(
     * length of arc segment (in degrees) that current point is on
     * subducting arc normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
     * subducting plate ID
-    * overriding plate ID
     * subduction zone (trench) plate ID
     
     The obliquity angles are in the range (-180 180). The range (0, 180) goes clockwise (when viewed from above the Earth) from the
@@ -269,7 +268,6 @@ def subduction_convergence(
                                 time,
                                 sub_segment_geometry,
                                 subduction_zone_plate_id,
-                                overriding_plate_id,
                                 subducting_plate_id,
                                 subducting_normal_reversal,
                                 threshold_sampling_distance_radians,
@@ -284,7 +282,6 @@ def subduction_convergence(
                             time,
                             sub_segment_geometry,
                             subduction_zone_plate_id,
-                            overriding_plate_id,
                             subducting_plate_id,
                             subducting_normal_reversal,
                             threshold_sampling_distance_radians,
@@ -302,7 +299,6 @@ def subduction_convergence(
                         time,
                         sub_segment_geometry,
                         subduction_zone_plate_id,
-                        overriding_plate_id,
                         subducting_plate_id,
                         subducting_normal_reversal,
                         threshold_sampling_distance_radians,
@@ -319,7 +315,6 @@ def _sub_segment_subduction_convergence(
         time,
         sub_segment_geometry,
         subduction_zone_plate_id,
-        overriding_plate_id,
         subducting_plate_id,
         subducting_normal_reversal,
         threshold_sampling_distance_radians,
@@ -503,7 +498,6 @@ def _sub_segment_subduction_convergence(
                 math.degrees(arc_length),
                 math.degrees(subducting_arc_normal_azimuth),
                 subducting_plate_id,
-                overriding_plate_id,
                 subduction_zone_plate_id))
 
 
@@ -542,7 +536,6 @@ def create_coverage_feature_from_convergence_data(
      all_subducting_length_degrees,
      all_subducting_arc_normal_azimuth_degrees,
      all_subducting_plate_id,
-     all_overriding_plate_id,
      all_subduction_zone_plate_id) = zip(*subduction_convergence_data)
     
     # Put all convergence data for the current reconstruction time into a single feature.
@@ -561,7 +554,6 @@ def create_coverage_feature_from_convergence_data(
         pygplates.ScalarType.create_gpml('SubductingLengthDegrees') : all_subducting_length_degrees,
         pygplates.ScalarType.create_gpml('SubductingArcNormalAzimuthDegrees') : all_subducting_arc_normal_azimuth_degrees,
         pygplates.ScalarType.create_gpml('SubductingPlateId') : all_subducting_plate_id,
-        pygplates.ScalarType.create_gpml('OverridingPlateId') : all_overriding_plate_id,
         pygplates.ScalarType.create_gpml('SubductionZonePlateId') : all_subduction_zone_plate_id,
     }
     coverage_feature.set_geometry((coverage_geometry, coverage_scalars))
@@ -656,7 +648,6 @@ if __name__ == '__main__':
       - length of arc segment (in degrees) that current point is on
       - subducting arc normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
       - subducting plate ID
-      - overriding plate ID
       - subduction zone (trench) plate ID
     
     The obliquity angles are in the range (-180 180). The range (0, 180) goes clockwise (when viewed from above the Earth) from the
