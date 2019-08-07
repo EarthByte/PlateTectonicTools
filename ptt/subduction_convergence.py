@@ -30,10 +30,6 @@ import pygplates
 import warnings
 
 
-def _runtime_warning(message_string):
-    warnings.warn(message_string, RuntimeWarning)
-
-
 # Required pygplates version.
 PYGPLATES_VERSION_REQUIRED = pygplates.Version(12)
 
@@ -55,22 +51,18 @@ DEFAULT_VELOCITY_DELTA_TIME = 1
 
 
 # Determine the overriding and subducting plates of the subduction shared sub-segment.
-def find_overriding_and_subducting_plates(subduction_shared_sub_segment, time):
+#
+# Note: This is now a method in PyGPlates version 23 called pygplates.ResolvedTopologicalSharedSubSegment.get_overriding_and_subducting_plates().
+def find_overriding_and_subducting_plates(subduction_shared_sub_segment):
     
     # Get the subduction polarity of the nearest subducting line.
     subduction_polarity = subduction_shared_sub_segment.get_feature().get_enumeration(pygplates.PropertyName.gpml_subduction_polarity)
     if (not subduction_polarity) or (subduction_polarity == 'Unknown'):
-        _runtime_warning('Unable to find the overriding plate of the subducting shared sub-segment "{0}"'.format(
-            subduction_shared_sub_segment.get_feature().get_name()))
-        _runtime_warning('    subduction zone feature is missing subduction polarity property or it is set to "Unknown".',)
         return
 
     # There should be two sharing topologies - one is the overriding plate and the other the subducting plate.
     sharing_resolved_topologies = subduction_shared_sub_segment.get_sharing_resolved_topologies()
     if len(sharing_resolved_topologies) != 2:
-        _runtime_warning('Unable to find the overriding and subducting plates of the subducting shared sub-segment "{0}" at {1}Ma'.format(
-            subduction_shared_sub_segment.get_feature().get_name(), time))
-        _runtime_warning('    there are not exactly 2 topologies sharing the sub-segment.')
         return
 
     overriding_plate = None
@@ -104,15 +96,9 @@ def find_overriding_and_subducting_plates(subduction_shared_sub_segment, time):
                 subducting_plate = sharing_resolved_topology
     
     if overriding_plate is None:
-        _runtime_warning('Unable to find the overriding plate of the subducting shared sub-segment "{0}" at {1}Ma'.format(
-            subduction_shared_sub_segment.get_feature().get_name(), time))
-        _runtime_warning('    both sharing topologies are on subducting side of subducting line.')
         return
     
     if subducting_plate is None:
-        _runtime_warning('Unable to find the subducting plate of the subducting shared sub-segment "{0}" at {1}Ma'.format(
-            subduction_shared_sub_segment.get_feature().get_name(), time))
-        _runtime_warning('    both sharing topologies are on overriding side of subducting line.')
         return
     
     return (overriding_plate, subducting_plate, subduction_polarity)
@@ -219,16 +205,17 @@ def subduction_convergence(
             # Find the overriding and subducting plates on either side of the shared sub-segment.
             if USING_PYGPLATES_VERSION_GREATER_EQUAL_23:
                 # PyGPlates version 23 has a method to get overriding and subducting plates.
-                overriding_and_subducting_plates = shared_sub_segment.get_overriding_and_subducting_plates(True)
-                if not overriding_and_subducting_plates:
-                    _runtime_warning('Unable to find the overriding and subducting plates of the subducting sub-segment "{0}" at {1}Ma. '
-                                     'Either the subduction polarity is not properly set or there are not exactly 2 topologies sharing the sub-segment.'.format(
-                                         shared_sub_segment.get_feature().get_name(), time))
-                    continue
+                overriding_and_subducting_plates = shared_sub_segment.get_overriding_and_subducting_plates(return_subduction_polarity=True)
             else:
-                overriding_and_subducting_plates = find_overriding_and_subducting_plates(shared_sub_segment, time)
-                if not overriding_and_subducting_plates:
-                    continue
+                # Otherwise call the function defined above.
+                overriding_and_subducting_plates = find_overriding_and_subducting_plates(shared_sub_segment)
+            if not overriding_and_subducting_plates:
+                warnings.warn('Unable to find the overriding and subducting plates of the subducting sub-segment "{0}" at {1}Ma.\n'
+                              '    Either the subduction polarity is not properly set or there are not exactly 2 topologies sharing the sub-segment.\n'
+                              '    Ignoring current sub-segment.'.format(
+                                  shared_sub_segment.get_feature().get_name(), time),
+                              RuntimeWarning)
+                continue
             overriding_plate, subducting_plate, subduction_polarity = overriding_and_subducting_plates
             overriding_plate_id = overriding_plate.get_feature().get_reconstruction_plate_id()
             subducting_plate_id = subducting_plate.get_feature().get_reconstruction_plate_id()
@@ -575,11 +562,11 @@ def subduction_convergence_over_time(
         output_gpml_filename = None):
     
     if time_increment <= 0:
-        _runtime_warning('The time increment "{0}" is not positive and non-zero.'.format(time_increment))
+        warnings.warn('The time increment "{0}" is not positive and non-zero.'.format(time_increment))
         return
     
     if time_young > time_old:
-        _runtime_warning('The young time {0} is older (larger) than the old time {1}.'.format(time_young, time_old))
+        warnings.warn('The young time {0} is older (larger) than the old time {1}.'.format(time_young, time_old))
         return
     
     rotation_model = pygplates.RotationModel(rotation_filenames)
@@ -595,7 +582,7 @@ def subduction_convergence_over_time(
     time = time_young
     while time <= pygplates.GeoTimeInstant(time_old):
         
-        print('Time {0}'.format(time))
+        # print('Time {0}'.format(time))
         
         # Returns a list of tesselated subduction zone points and associated convergence parameters
         # to write to the output file for the current 'time'.
@@ -628,13 +615,24 @@ def subduction_convergence_over_time(
 
 if __name__ == '__main__':
     
+    ########################
+    # Command-line parsing #
+    ########################
+    
     # Check the imported pygplates version.
     if not hasattr(pygplates, 'Version') or pygplates.Version.get_imported_version() < PYGPLATES_VERSION_REQUIRED:
-        _runtime_warning('{0}: Error - imported pygplates version {1} but version {2} or greater is required'.format(
+        warnings.warn('{0}: Error - imported pygplates version {1} but version {2} or greater is required'.format(
                 os.path.basename(__file__), pygplates.Version.get_imported_version(), PYGPLATES_VERSION_REQUIRED))
         sys.exit(1)
     
+    def warning_format(message, category, filename, lineno, file=None, line=None):
+        # return '{0}:{1}: {1}:{1}\n'.format(filename, lineno, category.__name__, message)
+        return '{0}: {1}\n'.format(category.__name__, message)
     
+    # Print the warnings without the filename and line number.
+    # Users are not going to want to see that.
+    warnings.formatwarning = warning_format
+   
     __description__ = \
     """Find the convergence rates along subduction zones over time.
     
@@ -735,9 +733,18 @@ if __name__ == '__main__':
                 'the filename suffix contains the time and the filename extension.')
     parser.add_argument('-e', '--output_filename_extension', type=str, default='xy',
             help='The output xy filename extension. Defaults to "xy".')
+    parser.add_argument('-w', '--ignore_topology_warnings', action="store_true",
+            help='If specified then topology warnings are ignored (not output). '
+                 'These are the warnings about not finding the overriding and subducting plates.')
+    
     
     # Parse command-line options.
     args = parser.parse_args()
+    
+    # Topology warnings correspond to calls to "warnings.warn(... , RuntimeWarning)".
+    # Ignore them if requested.
+    if args.ignore_topology_warnings:
+        warnings.simplefilter('ignore', RuntimeWarning)
     
     if args.time_range[0] > args.time_range[1]:
         raise argparse.ArgumentTypeError("First (young) value in time range is greater than second (old) value")
