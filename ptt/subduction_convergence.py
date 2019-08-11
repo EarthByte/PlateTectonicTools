@@ -108,7 +108,8 @@ def subduction_convergence(
         threshold_sampling_distance_radians,
         time,
         velocity_delta_time = 1.0,
-        anchor_plate_id = 0):
+        anchor_plate_id = 0,
+        **kwargs):
     # Docstring in numpydoc format...
     """Find the convergence and absolute velocities sampled along trenches (subduction zones) at a particular geological time.
     
@@ -124,6 +125,7 @@ def subduction_convergence(
     7 - trench normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
     8 - subducting plate ID
     9 - trench plate ID
+    * - extra data can be appended by specifying optional keyword arguments (*kwargs* - see list of options below).
     
     The obliquity angles are in the range (-180 180). The range (0, 180) goes clockwise (when viewed from above the Earth) from the
     trench normal direction to the velocity vector. The range (0, -180) goes counter-clockwise.
@@ -171,6 +173,8 @@ def subduction_convergence(
         * trench normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
         * subducting plate ID
         * trench plate ID
+        
+        * extra data can be appended by specifying optional keyword arguments (*kwargs* - see list of options below).
     
     Notes
     -----
@@ -185,6 +189,21 @@ def subduction_convergence(
     the threshold sampling distance).
     
     The trench normal (at each arc segment mid-point) always points *towards* the overriding plate.
+    
+    The optional *kwargs* parameters can be used to append extra data to the output tuple of each sample point.
+    The order of any extra data is the same order in which the parameters are listed below.
+    
+    The following optional keyword arguments are supported by *kwargs*:
+
+    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
+    | Name                                           | Type  | Default | Description                                                                 |
+    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
+    | output_subducting_absolute_velocity            | bool  | False   | Append the subducting plate absolute velocity magnitude (in cm/yr) and      |
+    |                                                |       |         | obliquity angle (in degrees) to each returned sample point.                 |
+    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
+    | output_subducting_absolute_velocity_components | bool  | False   | Append the subducting plate absolute velocity orthogonal and parallel       |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                        |
+    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
     """
     
     # Check the imported pygplates version.
@@ -277,7 +296,8 @@ def subduction_convergence(
                                 threshold_sampling_distance_radians,
                                 velocity_delta_time,
                                 rotation_model,
-                                anchor_plate_id)
+                                anchor_plate_id,
+                                **kwargs)
                 else: # It's not a topological line...
                     trench_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
                     sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
@@ -291,7 +311,8 @@ def subduction_convergence(
                             threshold_sampling_distance_radians,
                             velocity_delta_time,
                             rotation_model,
-                            anchor_plate_id)
+                            anchor_plate_id,
+                            **kwargs)
             else: # Cannot handle topological lines (so use overriding plate ID when one is detected)...
                 if isinstance(shared_boundary_section.get_topological_section(), pygplates.ResolvedTopologicalLine):
                     trench_plate_id = overriding_plate_id
@@ -308,7 +329,8 @@ def subduction_convergence(
                         threshold_sampling_distance_radians,
                         velocity_delta_time,
                         rotation_model,
-                        anchor_plate_id)
+                        anchor_plate_id,
+                        **kwargs)
     
     # Return data sorted since it's easier to compare results (when at least lon/lat is sorted).
     return sorted(output_data)
@@ -324,7 +346,14 @@ def _sub_segment_subduction_convergence(
         threshold_sampling_distance_radians,
         velocity_delta_time,
         rotation_model,
-        anchor_plate_id):
+        anchor_plate_id,
+        **kwargs):
+    
+    #
+    # Process keyword arguments.
+    #
+    output_subducting_absolute_velocity = kwargs.get('output_subducting_absolute_velocity', False)
+    output_subducting_absolute_velocity_components = kwargs.get('output_subducting_absolute_velocity_components', False)
     
     # Get the rotation of the subducting plate relative to the trench line
     # from 'time + velocity_delta_time' to 'time'.
@@ -387,12 +416,32 @@ def _sub_segment_subduction_convergence(
     #   reconstructed_geometry = R(0->t,A->T) * present_day_geometry
     #                          = R(t+dt->t,A->T) * R(0->t+dt,A->T) * present_day_geometry
     #
-    # ...where *reconstructed* subduction line geometry is already in the frame of the stage rotation "R(0->t2,A->F)".
+    # ...where *reconstructed* subduction line geometry is already in the frame of the stage rotation "R(t+dt->t,A->T)".
     trench_equivalent_stage_rotation = rotation_model.get_rotation(
             time,
             trench_plate_id,
             time + velocity_delta_time,
             anchor_plate_id=anchor_plate_id)
+    
+    if output_subducting_absolute_velocity or output_subducting_absolute_velocity_components:
+        # Get the rotation of the subducting plate relative to the anchor plate
+        # from 'time + velocity_delta_time' to 'time'.
+        #
+        # Note: We don't need to convert to and from the stage rotation reference frame
+        # like the above convergence because...
+        #
+        #   R(0->t,A->T)  = R(0->t,A->S) * R(0->t,S->T)
+        #                 = R(t+dt->t,A->S) * R(0->t+dt,A->S) * R(0->t,S->T)
+        #
+        #   reconstructed_geometry = R(0->t,A->T) * present_day_geometry
+        #                          = R(t+dt->t,A->S) * R(0->t+dt,A->S) * R(0->t,S->T) * present_day_geometry
+        #
+        # ...where *reconstructed* subduction line geometry is already in the frame of the stage rotation "R(t+dt->t,A->S)".
+        subducting_equivalent_stage_rotation = rotation_model.get_rotation(
+                time,
+                subducting_plate_id,
+                time + velocity_delta_time,
+                anchor_plate_id=anchor_plate_id)
     
     # Ensure the shared sub-segment is tessellated to within the threshold sampling distance.
     tessellated_shared_sub_segment_polyline = (
@@ -442,6 +491,12 @@ def _sub_segment_subduction_convergence(
             arc_midpoints, trench_equivalent_stage_rotation,
             velocity_delta_time, pygplates.VelocityUnits.cms_per_yr)
     
+    if output_subducting_absolute_velocity or output_subducting_absolute_velocity_components:
+        # Calculate the subducting absolute velocities at the arc midpoints.
+        subducting_absolute_velocity_vectors = pygplates.calculate_velocities(
+                arc_midpoints, subducting_equivalent_stage_rotation,
+                velocity_delta_time, pygplates.VelocityUnits.cms_per_yr)
+    
     for arc_index in range(len(arc_midpoints)):
         arc_midpoint = arc_midpoints[arc_index]
         arc_length = arc_lengths[arc_index]
@@ -472,7 +527,7 @@ def _sub_segment_subduction_convergence(
             if math.fabs(convergence_obliquity_degrees) > 90:
                 convergence_velocity_magnitude = -convergence_velocity_magnitude
         
-        # Calculate the trench absolute rate parameters.
+        # Calculate the trench absolute velocity magnitude and obliquity.
         trench_absolute_velocity_vector = trench_absolute_velocity_vectors[arc_index]
         if trench_absolute_velocity_vector.is_zero_magnitude():
             trench_absolute_velocity_magnitude = 0
@@ -496,8 +551,10 @@ def _sub_segment_subduction_convergence(
             if math.fabs(trench_absolute_obliquity_degrees) < 90:
                 trench_absolute_velocity_magnitude = -trench_absolute_velocity_magnitude
         
+        # Start with the standard tuple, and add extra data later (if requested).
+        #
         # The data will be output in GMT format (ie, lon first, then lat, etc).
-        output_data.append((
+        output_tuple = (
                 lon,
                 lat,
                 convergence_velocity_magnitude,
@@ -507,7 +564,40 @@ def _sub_segment_subduction_convergence(
                 math.degrees(arc_length),
                 math.degrees(trench_normal_azimuth),
                 subducting_plate_id,
-                trench_plate_id))
+                trench_plate_id)
+        
+        if output_subducting_absolute_velocity or output_subducting_absolute_velocity_components:
+            # Calculate the subducting absolute velocity magnitude and obliquity.
+            subducting_absolute_velocity_vector = subducting_absolute_velocity_vectors[arc_index]
+            if subducting_absolute_velocity_vector.is_zero_magnitude():
+                if output_subducting_absolute_velocity:
+                    output_tuple += (0.0, 0.0)
+                if output_subducting_absolute_velocity_components:
+                    output_tuple += (0.0, 0.0)
+            else:
+                subducting_absolute_velocity_magnitude = subducting_absolute_velocity_vector.get_magnitude()
+                subducting_absolute_obliquity_degrees = math.degrees(pygplates.Vector3D.angle_between(
+                        subducting_absolute_velocity_vector, trench_normal))
+                # Anti-clockwise direction has range (0, -180) instead of (0, 180).
+                if pygplates.Vector3D.dot(subducting_absolute_velocity_vector, clockwise_direction) < 0:
+                    subducting_absolute_obliquity_degrees = -subducting_absolute_obliquity_degrees
+                
+                # See if the subducting absolute motion is heading in the direction of the overriding plate.
+                # If it is then make the velocity magnitude negative to indicate this.
+                if math.fabs(subducting_absolute_obliquity_degrees) < 90:
+                    subducting_absolute_velocity_magnitude = -subducting_absolute_velocity_magnitude
+                
+                if output_subducting_absolute_velocity:
+                    output_tuple += (subducting_absolute_velocity_magnitude, subducting_absolute_obliquity_degrees)
+                if output_subducting_absolute_velocity_components:
+                    # The orthogonal and parallel components are just magnitude multiplied by cosine and sine.
+                    subducting_absolute_velocity_orthogonal = (
+                        math.cos(math.radians(subducting_absolute_obliquity_degrees)) * math.fabs(subducting_absolute_velocity_magnitude))
+                    subducting_absolute_velocity_parallel = (
+                        math.sin(math.radians(subducting_absolute_obliquity_degrees)) * math.fabs(subducting_absolute_velocity_magnitude))
+                    output_tuple += (subducting_absolute_velocity_orthogonal, subducting_absolute_velocity_parallel)
+        
+        output_data.append(output_tuple)
 
 
 def write_output_file(output_filename, output_data):
