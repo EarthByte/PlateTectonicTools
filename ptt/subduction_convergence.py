@@ -198,6 +198,9 @@ def subduction_convergence(
     +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
     | Name                                           | Type  | Default | Description                                                                 |
     +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
+    | output_trench_absolute_velocity_components     | bool  | False   | Append the trench plate absolute velocity orthogonal and parallel           |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                        |
+    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
     | output_subducting_absolute_velocity            | bool  | False   | Append the subducting plate absolute velocity magnitude (in cm/yr) and      |
     |                                                |       |         | obliquity angle (in degrees) to each returned sample point.                 |
     +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
@@ -352,6 +355,7 @@ def _sub_segment_subduction_convergence(
     #
     # Process keyword arguments.
     #
+    output_trench_absolute_velocity_components = kwargs.get('output_trench_absolute_velocity_components', False)
     output_subducting_absolute_velocity = kwargs.get('output_subducting_absolute_velocity', False)
     output_subducting_absolute_velocity_components = kwargs.get('output_subducting_absolute_velocity_components', False)
     
@@ -565,6 +569,14 @@ def _sub_segment_subduction_convergence(
                 math.degrees(trench_normal_azimuth),
                 subducting_plate_id,
                 trench_plate_id)
+        
+        if output_trench_absolute_velocity_components:
+            # The orthogonal and parallel components are just magnitude multiplied by cosine and sine.
+            trench_absolute_velocity_orthogonal = (
+                math.cos(math.radians(trench_absolute_obliquity_degrees)) * math.fabs(trench_absolute_velocity_magnitude))
+            trench_absolute_velocity_parallel = (
+                math.sin(math.radians(trench_absolute_obliquity_degrees)) * math.fabs(trench_absolute_velocity_magnitude))
+            output_tuple += (trench_absolute_velocity_orthogonal, trench_absolute_velocity_parallel)
         
         if output_subducting_absolute_velocity or output_subducting_absolute_velocity_components:
             # Calculate the subducting absolute velocity magnitude and obliquity.
