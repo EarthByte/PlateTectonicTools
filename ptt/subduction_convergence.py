@@ -23,9 +23,7 @@
 
 
 from __future__ import print_function
-import argparse
 import math
-import sys
 import pygplates
 import warnings
 
@@ -116,14 +114,16 @@ def subduction_convergence(
     
     Each sampled point along subduction zones returns the following information:
     
-    * subducting convergence (relative to subduction zone) velocity magnitude (in cm/yr)
-    * subducting convergence velocity obliquity angle (angle between subduction zone normal vector and convergence velocity vector)
-    * subduction zone absolute (relative to anchor plate) velocity magnitude (in cm/yr)
-    * subduction zone absolute velocity obliquity angle (angle between subduction zone normal vector and absolute velocity vector)
-    * length of arc segment (in degrees) that current point is on
-    * subducting arc normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
-    * subducting plate ID
-    * subduction zone (trench) plate ID
+    0 - longitude of sample point
+    1 - latitude of sample point
+    2 - subducting convergence (relative to subduction zone) velocity magnitude (in cm/yr)
+    3 - subducting convergence velocity obliquity angle (angle between subduction zone normal vector and convergence velocity vector)
+    4 - subduction zone absolute (relative to anchor plate) velocity magnitude (in cm/yr)
+    5 - subduction zone absolute velocity obliquity angle (angle between subduction zone normal vector and absolute velocity vector)
+    6 - length of arc segment (in degrees) that current point is on
+    7 - subducting arc normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
+    8 - subducting plate ID
+    9 - subduction zone (trench) plate ID
     
     The obliquity angles are in the range (-180 180). The range (0, 180) goes clockwise (when viewed from above the Earth) from the
     subducting normal direction to the velocity vector. The range (0, -180) goes counter-clockwise.
@@ -159,6 +159,17 @@ def subduction_convergence(
         The results for all points sampled along subduction zones.
         The size of the returned list is equal to the number of sampled points.
         Each tuple in the list corresponds to a point and has the following tuple items:
+        
+        * longitude of sample point
+        * latitude of sample point
+        * subducting convergence (relative to subduction zone) velocity magnitude (in cm/yr)
+        * subducting convergence velocity obliquity angle (angle between subduction zone normal vector and convergence velocity vector)
+        * subduction zone absolute (relative to anchor plate) velocity magnitude (in cm/yr)
+        * subduction zone absolute velocity obliquity angle (angle between subduction zone normal vector and absolute velocity vector)
+        * length of arc segment (in degrees) that current point is on
+        * subducting arc normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
+        * subducting plate ID
+        * subduction zone (trench) plate ID
     
     Notes
     -----
@@ -174,6 +185,11 @@ def subduction_convergence(
     
     The subducting arc normal (at each arc segment mid-point) always points *towards* the overriding plate.
     """
+    
+    # Check the imported pygplates version.
+    if pygplates.Version.get_imported_version() < PYGPLATES_VERSION_REQUIRED:
+        raise RuntimeError('Using pygplates version {0} but version {1} or greater is required'.format(
+                pygplates.Version.get_imported_version(), PYGPLATES_VERSION_REQUIRED))
     
     # Turn rotation data into a RotationModel (if not already).
     rotation_model = pygplates.RotationModel(rotation_features_or_model)
@@ -363,9 +379,14 @@ def _sub_segment_subduction_convergence(
     # from 'time + velocity_delta_time' to 'time'.
     #
     # Note: We don't need to convert to and from the stage rotation reference frame
-    # like the above convergence because this stage rotation is relative to the anchor plate
-    # and so the above to/from stage rotation frame conversion "R(0->t2,A->F)" is the
-    # identity rotation since the fixed plate (F) is the anchor plate (A).
+    # like the above convergence because...
+    #
+    #   R(0->t,A->T)  = R(t+dt->t,A->T) * R(0->t+dt,A->T)
+    #
+    #   reconstructed_geometry = R(0->t,A->T) * present_day_geometry
+    #                          = R(t+dt->t,A->T) * R(0->t+dt,A->T) * present_day_geometry
+    #
+    # ...where *reconstructed* subduction line geometry is already in the frame of the stage rotation "R(0->t2,A->F)".
     subduction_zone_equivalent_stage_rotation = rotation_model.get_rotation(
             time,
             subduction_zone_plate_id,
@@ -561,13 +582,16 @@ def subduction_convergence_over_time(
         anchor_plate_id = 0,
         output_gpml_filename = None):
     
+    # Check the imported pygplates version.
+    if pygplates.Version.get_imported_version() < PYGPLATES_VERSION_REQUIRED:
+        raise RuntimeError('Using pygplates version {0} but version {1} or greater is required'.format(
+                pygplates.Version.get_imported_version(), PYGPLATES_VERSION_REQUIRED))
+    
     if time_increment <= 0:
-        warnings.warn('The time increment "{0}" is not positive and non-zero.'.format(time_increment))
-        return
+        raise ValueError('The time increment "{0}" is not positive and non-zero.'.format(time_increment))
     
     if time_young > time_old:
-        warnings.warn('The young time {0} is older (larger) than the old time {1}.'.format(time_young, time_old))
-        return
+        raise ValueError('The young time {0} is older (larger) than the old time {1}.'.format(time_young, time_old))
     
     rotation_model = pygplates.RotationModel(rotation_filenames)
     
@@ -615,15 +639,14 @@ def subduction_convergence_over_time(
 
 if __name__ == '__main__':
     
+    import argparse
+    import os.path
+    import sys
+    import traceback
+    
     ########################
     # Command-line parsing #
     ########################
-    
-    # Check the imported pygplates version.
-    if not hasattr(pygplates, 'Version') or pygplates.Version.get_imported_version() < PYGPLATES_VERSION_REQUIRED:
-        warnings.warn('{0}: Error - imported pygplates version {1} but version {2} or greater is required'.format(
-                os.path.basename(__file__), pygplates.Version.get_imported_version(), PYGPLATES_VERSION_REQUIRED))
-        sys.exit(1)
     
     def warning_format(message, category, filename, lineno, file=None, line=None):
         # return '{0}:{1}: {1}:{1}\n'.format(filename, lineno, category.__name__, message)
@@ -633,7 +656,9 @@ if __name__ == '__main__':
     # Users are not going to want to see that.
     warnings.formatwarning = warning_format
    
-    __description__ = \
+    def main():
+        
+        __description__ = \
     """Find the convergence rates along subduction zones over time.
     
     For each time (over a range of times) an output xy file is generated containing the resolved subduction zones
@@ -674,102 +699,111 @@ if __name__ == '__main__':
 
     python %(prog)s -r rotations.rot -m topologies.gpml -t 0 200 -i 1 -v 1 -d 0.5 -e xy -- convergence
      """
-
-    # The command-line parser.
-    parser = argparse.ArgumentParser(description = __description__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    
-    parser.add_argument('-r', '--rotation_filenames', type=str, nargs='+', required=True,
-            metavar='rotation_filename', help='One or more rotation files.')
-    parser.add_argument('-m', '--topology_filenames', type=str, nargs='+', required=True,
-            metavar='topology_filename', help='One or more topology files to generate resolved subducting lines.')
-    parser.add_argument('-a', '--anchor', type=int, default=0,
-            dest='anchor_plate_id',
-            help='Anchor plate id used for reconstructing. Defaults to zero.')
-    
-    # Can specify only one of '-i', '-l' or '-t'.
-    threshold_sampling_distance_group = parser.add_mutually_exclusive_group()
-    threshold_sampling_distance_group.add_argument('-d', '--threshold_sampling_distance_degrees', type=float,
-            help='Threshold sampling distance along subduction zones (in degrees). '
-                'Defaults to {0} degrees.'.format(DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES))
-    threshold_sampling_distance_group.add_argument('-k', '--threshold_sampling_distance_kms', type=float,
-            help='Threshold sampling distance along subduction zones (in Kms). '
-                'Defaults to {0:.2f} Kms (which is equivalent to {1} degrees).'.format(
-                        DEFAULT_THRESHOLD_SAMPLING_DISTANCE_KMS,
-                        DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES))
-
-    parser.add_argument('-t', '--time_range', type=float, nargs=2,
-            metavar=('young_time', 'old_time'),
-            default=[DEFAULT_TIME_RANGE_YOUNG_TIME, DEFAULT_TIME_RANGE_OLD_TIME],
-            help='The time range (in Ma) from young time to old time. '
-                'Defaults to {0} -> {1} Ma.'.format(
-                    DEFAULT_TIME_RANGE_YOUNG_TIME, DEFAULT_TIME_RANGE_OLD_TIME))
-    
-    def parse_positive_number(value_string):
-        try:
-            value = float(value_string)
-        except ValueError:
-            raise argparse.ArgumentTypeError("%s is not a number" % value_string)
         
-        if value <= 0:
-            raise argparse.ArgumentTypeError("%g is not a positive number" % value)
+        # The command-line parser.
+        parser = argparse.ArgumentParser(description = __description__, formatter_class=argparse.RawDescriptionHelpFormatter)
         
-        return value
+        parser.add_argument('-r', '--rotation_filenames', type=str, nargs='+', required=True,
+                metavar='rotation_filename', help='One or more rotation files.')
+        parser.add_argument('-m', '--topology_filenames', type=str, nargs='+', required=True,
+                metavar='topology_filename', help='One or more topology files to generate resolved subducting lines.')
+        parser.add_argument('-a', '--anchor', type=int, default=0,
+                dest='anchor_plate_id',
+                help='Anchor plate id used for reconstructing. Defaults to zero.')
+        
+        # Can specify only one of '-i', '-l' or '-t'.
+        threshold_sampling_distance_group = parser.add_mutually_exclusive_group()
+        threshold_sampling_distance_group.add_argument('-d', '--threshold_sampling_distance_degrees', type=float,
+                help='Threshold sampling distance along subduction zones (in degrees). '
+                    'Defaults to {0} degrees.'.format(DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES))
+        threshold_sampling_distance_group.add_argument('-k', '--threshold_sampling_distance_kms', type=float,
+                help='Threshold sampling distance along subduction zones (in Kms). '
+                    'Defaults to {0:.2f} Kms (which is equivalent to {1} degrees).'.format(
+                            DEFAULT_THRESHOLD_SAMPLING_DISTANCE_KMS,
+                            DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES))
+
+        parser.add_argument('-t', '--time_range', type=float, nargs=2,
+                metavar=('young_time', 'old_time'),
+                default=[DEFAULT_TIME_RANGE_YOUNG_TIME, DEFAULT_TIME_RANGE_OLD_TIME],
+                help='The time range (in Ma) from young time to old time. '
+                    'Defaults to {0} -> {1} Ma.'.format(
+                        DEFAULT_TIME_RANGE_YOUNG_TIME, DEFAULT_TIME_RANGE_OLD_TIME))
+        
+        def parse_positive_number(value_string):
+            try:
+                value = float(value_string)
+            except ValueError:
+                raise argparse.ArgumentTypeError("%s is not a number" % value_string)
+            
+            if value <= 0:
+                raise argparse.ArgumentTypeError("%g is not a positive number" % value)
+            
+            return value
+        
+        parser.add_argument('-i', '--time_increment', type=parse_positive_number,
+                default=DEFAULT_TIME_INCREMENT,
+                help='The time increment in My. Defaults to {0} My.'.format(DEFAULT_TIME_INCREMENT))
+        
+        parser.add_argument('-v', '--velocity_delta_time', type=parse_positive_number,
+                default=DEFAULT_VELOCITY_DELTA_TIME,
+                help='The delta time interval used to calculate velocities in My. '
+                    'Defaults to {0} My.'.format(DEFAULT_VELOCITY_DELTA_TIME))
+        
+        parser.add_argument('-g', '--output_gpml_filename', type=str,
+                help='Optional GPML output filename to contain the subduction convergence data for all specified times. '
+                     'This can then be loaded into GPlates to display the data as scalar coverages.')
+        
+        parser.add_argument('output_filename_prefix', type=str,
+                help='The output filename prefix. An output file is created for each geological time in the sequence where '
+                    'the filename suffix contains the time and the filename extension.')
+        parser.add_argument('-e', '--output_filename_extension', type=str, default='xy',
+                help='The output xy filename extension. Defaults to "xy".')
+        parser.add_argument('-w', '--ignore_topology_warnings', action="store_true",
+                help='If specified then topology warnings are ignored (not output). '
+                     'These are the warnings about not finding the overriding and subducting plates.')
+        
+        
+        # Parse command-line options.
+        args = parser.parse_args()
+        
+        # Topology warnings correspond to calls to "warnings.warn(... , RuntimeWarning)".
+        # Ignore them if requested.
+        if args.ignore_topology_warnings:
+            warnings.simplefilter('ignore', RuntimeWarning)
+        
+        if args.time_range[0] > args.time_range[1]:
+            raise argparse.ArgumentTypeError("First (young) value in time range is greater than second (old) value")
+        
+        # Determine threshold sampling distance.
+        if args.threshold_sampling_distance_degrees:
+            threshold_sampling_distance_radians = math.radians(args.threshold_sampling_distance_degrees)
+        elif args.threshold_sampling_distance_kms:
+            threshold_sampling_distance_radians = args.threshold_sampling_distance_kms / pygplates.Earth.equatorial_radius_in_kms
+        else: # default...
+            threshold_sampling_distance_radians = math.radians(DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES)
+        
+        return_code = subduction_convergence_over_time(
+                args.output_filename_prefix,
+                args.output_filename_extension,
+                args.rotation_filenames,
+                args.topology_filenames,
+                threshold_sampling_distance_radians,
+                args.time_range[0],
+                args.time_range[1],
+                args.time_increment,
+                args.velocity_delta_time,
+                args.anchor_plate_id,
+                args.output_gpml_filename)
+        if return_code is None:
+            sys.exit(1)
+            
+        sys.exit(0)
     
-    parser.add_argument('-i', '--time_increment', type=parse_positive_number,
-            default=DEFAULT_TIME_INCREMENT,
-            help='The time increment in My. Defaults to {0} My.'.format(DEFAULT_TIME_INCREMENT))
-    
-    parser.add_argument('-v', '--velocity_delta_time', type=parse_positive_number,
-            default=DEFAULT_VELOCITY_DELTA_TIME,
-            help='The delta time interval used to calculate velocities in My. '
-                'Defaults to {0} My.'.format(DEFAULT_VELOCITY_DELTA_TIME))
-    
-    parser.add_argument('-g', '--output_gpml_filename', type=str,
-            help='Optional GPML output filename to contain the subduction convergence data for all specified times. '
-                 'This can then be loaded into GPlates to display the data as scalar coverages.')
-    
-    parser.add_argument('output_filename_prefix', type=str,
-            help='The output filename prefix. An output file is created for each geological time in the sequence where '
-                'the filename suffix contains the time and the filename extension.')
-    parser.add_argument('-e', '--output_filename_extension', type=str, default='xy',
-            help='The output xy filename extension. Defaults to "xy".')
-    parser.add_argument('-w', '--ignore_topology_warnings', action="store_true",
-            help='If specified then topology warnings are ignored (not output). '
-                 'These are the warnings about not finding the overriding and subducting plates.')
-    
-    
-    # Parse command-line options.
-    args = parser.parse_args()
-    
-    # Topology warnings correspond to calls to "warnings.warn(... , RuntimeWarning)".
-    # Ignore them if requested.
-    if args.ignore_topology_warnings:
-        warnings.simplefilter('ignore', RuntimeWarning)
-    
-    if args.time_range[0] > args.time_range[1]:
-        raise argparse.ArgumentTypeError("First (young) value in time range is greater than second (old) value")
-    
-    # Determine threshold sampling distance.
-    if args.threshold_sampling_distance_degrees:
-        threshold_sampling_distance_radians = math.radians(args.threshold_sampling_distance_degrees)
-    elif args.threshold_sampling_distance_kms:
-        threshold_sampling_distance_radians = args.threshold_sampling_distance_kms / pygplates.Earth.equatorial_radius_in_kms
-    else: # default...
-        threshold_sampling_distance_radians = math.radians(DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES)
-    
-    return_code = subduction_convergence_over_time(
-            args.output_filename_prefix,
-            args.output_filename_extension,
-            args.rotation_filenames,
-            args.topology_filenames,
-            threshold_sampling_distance_radians,
-            args.time_range[0],
-            args.time_range[1],
-            args.time_increment,
-            args.velocity_delta_time,
-            args.anchor_plate_id,
-            args.output_gpml_filename)
-    if return_code is None:
+    try:
+        main()
+        sys.exit(0)
+    except Exception as exc:
+        print('ERROR: {0}: {1}'.format(os.path.basename(__file__), exc), file=sys.stderr)
+        # Uncomment this to print traceback to location of raised exception.
+        # traceback.print_exc()
         sys.exit(1)
-        
-    sys.exit(0)
