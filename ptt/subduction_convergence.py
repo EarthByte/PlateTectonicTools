@@ -195,21 +195,35 @@ def subduction_convergence(
     
     The following optional keyword arguments are supported by *kwargs*:
 
-    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
-    | Name                                           | Type  | Default | Description                                                                 |
-    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
-    | output_convergence_velocity_components         | bool  | False   | Append the convergence velocity orthogonal and parallel                     |
-    |                                                |       |         | components (in cm/yr) to each returned sample point.                        |
-    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
-    | output_trench_absolute_velocity_components     | bool  | False   | Append the trench plate absolute velocity orthogonal and parallel           |
-    |                                                |       |         | components (in cm/yr) to each returned sample point.                        |
-    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
-    | output_subducting_absolute_velocity            | bool  | False   | Append the subducting plate absolute velocity magnitude (in cm/yr) and      |
-    |                                                |       |         | obliquity angle (in degrees) to each returned sample point.                 |
-    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
-    | output_subducting_absolute_velocity_components | bool  | False   | Append the subducting plate absolute velocity orthogonal and parallel       |
-    |                                                |       |         | components (in cm/yr) to each returned sample point.                        |
-    +------------------------------------------------+-------+---------+-----------------------------------------------------------------------------+
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | Name                                           | Type  | Default | Description                                                                     |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_distance_to_nearest_edge_of_trench      | bool  | False   | Append the distance (in degrees) along the trench line to the nearest           |
+    |                                                |       |         | trench edge to each returned sample point. The trench edge is the location      |
+    |                                                |       |         | on the current trench feature where the subducting or overriding plate changes. |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_distance_to_start_edge_of_trench        | bool  | False   | Append the distance (in degrees) along the trench line from the start edge of   |
+    |                                                |       |         | the trench to each returned sample point. The start of the trench is along the  |
+    |                                                |       |         | clockwise direction around the overriding plate.                                |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_convergence_velocity_components         | bool  | False   | Append the convergence velocity orthogonal and parallel                         |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                            |
+    |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
+    |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_trench_absolute_velocity_components     | bool  | False   | Append the trench plate absolute velocity orthogonal and parallel               |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                            |
+    |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
+    |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_subducting_absolute_velocity            | bool  | False   | Append the subducting plate absolute velocity magnitude (in cm/yr) and          |
+    |                                                |       |         | obliquity angle (in degrees) to each returned sample point.                     |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_subducting_absolute_velocity_components | bool  | False   | Append the subducting plate absolute velocity orthogonal and parallel           |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                            |
+    |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
+    |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
     """
     
     # Check the imported pygplates version.
@@ -262,7 +276,7 @@ def subduction_convergence(
             overriding_plate_id = overriding_plate.get_feature().get_reconstruction_plate_id()
             subducting_plate_id = subducting_plate.get_feature().get_reconstruction_plate_id()
             
-            # We need to reverse the trench vector direction if overriding plate is to
+            # We need to reverse the trench normal direction if overriding plate is to
             # the right of the subducting line since great circle arc normal is always to the left.
             if subduction_polarity == 'Left':
                 trench_normal_reversal = 1
@@ -288,6 +302,11 @@ def subduction_convergence(
             if USING_PYGPLATES_VERSION_GREATER_EQUAL_22:
                 sub_segments_of_topological_line_sub_segment = shared_sub_segment.get_sub_segments()
                 if sub_segments_of_topological_line_sub_segment:
+                    # The trench is the entire topological line (not the individual sub-sub-segments).
+                    trench_length_radians = shared_sub_segment.get_resolved_geometry().get_arc_length()
+                    # The distance-along-trench will get accumulated by each sub-sub-segment.
+                    distance_along_trench_radians = 0.0
+                    
                     # Iterate over the sub-sub-segments associated with the topological line.
                     for sub_sub_segment in sub_segments_of_topological_line_sub_segment:
                         trench_plate_id = sub_sub_segment.get_feature().get_reconstruction_plate_id()
@@ -299,14 +318,21 @@ def subduction_convergence(
                                 trench_plate_id,
                                 subducting_plate_id,
                                 trench_normal_reversal,
+                                trench_length_radians,
+                                distance_along_trench_radians,
                                 threshold_sampling_distance_radians,
                                 velocity_delta_time,
                                 rotation_model,
                                 anchor_plate_id,
                                 **kwargs)
+                        
+                        # Accumulate distance-along-trench.
+                        distance_along_trench_radians += sub_segment_geometry.get_arc_length()
+                        
                 else: # It's not a topological line...
                     trench_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
                     sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
+                    trench_length_radians = sub_segment_geometry.get_arc_length()
                     _sub_segment_subduction_convergence(
                             output_data,
                             time,
@@ -314,6 +340,8 @@ def subduction_convergence(
                             trench_plate_id,
                             subducting_plate_id,
                             trench_normal_reversal,
+                            trench_length_radians,
+                            0.0,  # distance_along_trench_radians
                             threshold_sampling_distance_radians,
                             velocity_delta_time,
                             rotation_model,
@@ -325,6 +353,7 @@ def subduction_convergence(
                 else:
                     trench_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
                 sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
+                trench_length_radians = sub_segment_geometry.get_arc_length()
                 _sub_segment_subduction_convergence(
                         output_data,
                         time,
@@ -332,6 +361,8 @@ def subduction_convergence(
                         trench_plate_id,
                         subducting_plate_id,
                         trench_normal_reversal,
+                        trench_length_radians,
+                        0.0,  # distance_along_trench_radians
                         threshold_sampling_distance_radians,
                         velocity_delta_time,
                         rotation_model,
@@ -349,6 +380,8 @@ def _sub_segment_subduction_convergence(
         trench_plate_id,
         subducting_plate_id,
         trench_normal_reversal,
+        trench_length_radians,
+        distance_along_trench_radians,
         threshold_sampling_distance_radians,
         velocity_delta_time,
         rotation_model,
@@ -358,6 +391,8 @@ def _sub_segment_subduction_convergence(
     #
     # Process keyword arguments.
     #
+    output_distance_to_nearest_edge_of_trench = kwargs.get('output_distance_to_nearest_edge_of_trench', False)
+    output_distance_to_start_edge_of_trench = kwargs.get('output_distance_to_start_edge_of_trench', False)
     output_convergence_velocity_components = kwargs.get('output_convergence_velocity_components', False)
     output_trench_absolute_velocity_components = kwargs.get('output_trench_absolute_velocity_components', False)
     output_subducting_absolute_velocity = kwargs.get('output_subducting_absolute_velocity', False)
@@ -573,6 +608,37 @@ def _sub_segment_subduction_convergence(
                 math.degrees(trench_normal_azimuth),
                 subducting_plate_id,
                 trench_plate_id)
+        
+        if output_distance_to_nearest_edge_of_trench or output_distance_to_start_edge_of_trench:
+            # Increase by distance from previous segment mid-point to current segment mid-point.
+            # Which is half previous segment length and half current segment length.
+            if arc_index > 0:
+                prev_arc_length = arc_lengths[arc_index-1]
+                distance_along_trench_radians += 0.5 * prev_arc_length
+            distance_along_trench_radians += 0.5 * arc_length
+            
+            # Distance to nearest edge of the trench.
+            if output_distance_to_nearest_edge_of_trench:
+                if distance_along_trench_radians < 0.5 * trench_length_radians:
+                    distance_to_nearest_edge_of_trench_radians = distance_along_trench_radians
+                else:
+                    distance_to_nearest_edge_of_trench_radians = trench_length_radians - distance_along_trench_radians
+                
+                output_tuple += (math.degrees(distance_to_nearest_edge_of_trench_radians),)
+            
+            # Distance to start edge of the trench.
+            if output_distance_to_start_edge_of_trench:
+                # We want the distance to be along the clockwise direction around the overriding plate.
+                if trench_normal_reversal < 0:
+                    # The overriding plate is on the right of the trench.
+                    # So the clockwise direction starts at the beginning of the trench.
+                    distance_to_start_edge_of_trench_radians = distance_along_trench_radians
+                else:
+                    # The overriding plate is on the left of the trench.
+                    # So the clockwise direction starts at the end of the trench.
+                    distance_to_start_edge_of_trench_radians = trench_length_radians - distance_along_trench_radians
+                
+                output_tuple += (math.degrees(distance_to_start_edge_of_trench_radians),)
         
         if output_convergence_velocity_components:
             # The orthogonal and parallel components are just magnitude multiplied by cosine and sine.
