@@ -912,6 +912,263 @@ def subduction_convergence_over_time(
     return 0 # Success
 
 
+# Convert mm/yr to cm/yr.
+_MM_YR_TO_CM_YR = 0.1
+
+# Earth mean radius in kms.
+_EARTH_RADIUS_KMS = 6371.009
+
+
+def convert_old_convergence_output(
+        old_convergence_data,
+        **kwargs):
+    """
+    Converts the output of the old "convergence.py" script to the current output format of the *subduction_convergence* function.
+    
+    This function's purpose is to help transition workflows that use "convergence.py" to use this script instead.
+    At the time this function was implemented, both scripts have essentially the same output with just minor format differences (as seen below).
+    However in the future this script will generate additional outputs (such as deformation strain rates) that the old script will not.
+        
+    The *kwargs* is the same as that of the *subduction_convergence* function, which is used to append extra data to the output of each sample point.
+    
+    The following optional keyword arguments are supported by *kwargs*:
+
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | Name                                           | Type  | Default | Description                                                                     |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_distance_to_nearest_edge_of_trench      | bool  | False   | Append the distance (in degrees) along the trench line to the nearest           |
+    |                                                |       |         | trench edge to each returned sample point. The trench edge is the location      |
+    |                                                |       |         | on the current trench feature where the subducting or overriding plate changes. |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_distance_to_start_edge_of_trench        | bool  | False   | Append the distance (in degrees) along the trench line from the start edge of   |
+    |                                                |       |         | the trench to each returned sample point. The start of the trench is along the  |
+    |                                                |       |         | clockwise direction around the overriding plate.                                |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_convergence_velocity_components         | bool  | False   | Append the convergence velocity orthogonal and parallel                         |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                            |
+    |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
+    |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_trench_absolute_velocity_components     | bool  | False   | Append the trench plate absolute velocity orthogonal and parallel               |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                            |
+    |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
+    |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_subducting_absolute_velocity            | bool  | False   | Append the subducting plate absolute velocity magnitude (in cm/yr) and          |
+    |                                                |       |         | obliquity angle (in degrees) to each returned sample point.                     |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_subducting_absolute_velocity_components | bool  | False   | Append the subducting plate absolute velocity orthogonal and parallel           |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                            |
+    |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
+    |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    """
+    
+    #
+    # Process keyword arguments.
+    #
+    output_distance_to_nearest_edge_of_trench = kwargs.get('output_distance_to_nearest_edge_of_trench', False)
+    output_distance_to_start_edge_of_trench = kwargs.get('output_distance_to_start_edge_of_trench', False)
+    output_convergence_velocity_components = kwargs.get('output_convergence_velocity_components', False)
+    output_trench_absolute_velocity_components = kwargs.get('output_trench_absolute_velocity_components', False)
+    output_subducting_absolute_velocity = kwargs.get('output_subducting_absolute_velocity', False)
+    output_subducting_absolute_velocity_components = kwargs.get('output_subducting_absolute_velocity_components', False)
+    
+    new_convergence_data = []
+    for old_convergence_data_sample in old_convergence_data:
+        
+        (
+         # Longitude of mid-point of segment (degrees).
+         old_longitude,
+         # Latitude of mid-point of segment (degrees).
+         old_latitude,
+         # Convergence velocity magnitude (mm/yr).
+         old_convRate,
+         # Length of segment containing the sample mid-point (km).
+         old_segmentLength,
+         # Subducting plate velocity orthogonal to the trench in direction of overriding plate (mm/yr).
+         old_orthAbs,
+         # Overriding plate velocity orthogonal to the trench in direction of overriding plate (mm/yr).
+         old_orthOP,
+         # Trench velocity orthogonal to the trench in direction of overriding plate (mm/yr).
+         old_orthTrench,
+         # Convergence obliquity (degrees) varies from 0 to 90 degrees (regardless of diverging/converging).
+         old_subObliquity,
+         # Subduction line polarity (degrees).
+         # Angle from North (-180 to 180 degrees) along subduction line
+         # in order of its points (ie, first to last).
+         # Note that the subduction line's points are reversed (if necessary)
+         # so that the overriding plate is always on its right.
+         old_subPolarity,
+         # Distance (km) to start of subduction line, where start is the first point along
+         # subduction line where subducting/overriding plate IDs are same as current location.
+         # Note that the subduction line's points are reversed (if necessary)
+         # so that the overriding plate is always on its right.
+         old_distEdge,
+         # Convergence velocity orthogonal to the trench in direction of overriding plate (mm/yr).
+         old_convPerp,
+         # Convergence velocity parallel to the trench (mm/yr) along subduction line
+         # in order of its points (ie, first to last).
+         # Note that the subduction line's points are reversed (if necessary)
+         # so that the overriding plate is always on its right.
+         old_convPar,
+         # Subducting plate velocity parallel to the trench (mm/yr) along subduction line
+         # in order of its points (ie, first to last).
+         # Note that the subduction line's points are reversed (if necessary)
+         # so that the overriding plate is always on its right.
+         old_parAbs,
+         # Overriding plate velocity parallel to the trench (mm/yr) along subduction line
+         # in order of its points (ie, first to last).
+         # Note that the subduction line's points are reversed (if necessary)
+         # so that the overriding plate is always on its right.
+         old_parOP,
+         # Trench velocity parallel to the trench (mm/yr) along subduction line
+         # in order of its points (ie, first to last).
+         # Note that the subduction line's points are reversed (if necessary)
+         # so that the overriding plate is always on its right.
+         old_parTrench,
+         # Distance (km) to edge of subduction line, where edge is nearest location along
+         # subduction line where subducting/overriding plate IDs differ from current location.
+         old_distEdgeTotal,
+         # Subducting plate ID.
+         old_SPid,
+         # Trench plate ID.
+         old_TRENCHid,
+         # Overriding plate ID.
+         old_OPid) = old_convergence_data_sample
+        
+        new_longitude = old_longitude
+        new_latitude = old_latitude
+        
+        # Convergence velocity magnitude.
+        new_convergence_velocity_magnitude = _MM_YR_TO_CM_YR * old_convRate
+        # The convergence velocity magnitude is negative if the plates are diverging.
+        if old_convPerp < 0:
+            new_convergence_velocity_magnitude = -new_convergence_velocity_magnitude
+        
+        #
+        # The vertical line is subduction line in old convergence (normal is always to the right).
+        # The new obliquity goes clockwise (0 to 180) and counter-clockwise (0 to -180) from the normal
+        # (which points in the direction of the overriding plate).
+        # This is atan2(-y, x) where x is component of convergence velocity in the normal direction, and
+        # y is component of convergence along old subduction line.
+        #
+        #                 --> normal
+        #                ^\    positive
+        #                | \  obliquity
+        #                |  \
+        #
+        #             <-- normal
+        #    negative   /^
+        #   obliquity  / |
+        #             /  |
+        #
+        new_convergence_obliquity_degrees = math.degrees(math.atan2(-old_convPar, old_convPerp))
+        
+        # Trench absolute velocity magnitude obtained parallel and orthogonal components.
+        new_trench_absolute_velocity_magnitude = _MM_YR_TO_CM_YR * math.sqrt(old_parTrench * old_parTrench + old_orthTrench * old_orthTrench)
+        # The trench absolute velocity magnitude is negative if trench is moving toward the overriding plate.
+        if old_orthTrench > 0:
+            new_trench_absolute_velocity_magnitude = -new_trench_absolute_velocity_magnitude
+        
+        # Same reasoning as for convergence obliquity above.
+        new_trench_absolute_obliquity_degrees = math.degrees(math.atan2(-old_parTrench, old_orthTrench))
+        
+        # Convert distance in kms to degrees.
+        new_arc_length_degrees = math.degrees(old_segmentLength / _EARTH_RADIUS_KMS)
+        
+        # The old subduction polarity points along the subduction line, and since the overriding plate
+        # (and hence normal) is always to the right, we simply add 90 degrees to point along normal.
+        new_subducting_arc_normal_azimuth_degrees = old_subPolarity + 90.0
+        # Ensure range is [0,360].
+        new_subducting_arc_normal_azimuth_degrees = (new_subducting_arc_normal_azimuth_degrees + 360.0) % 360.0
+        
+        new_subducting_plate_id = old_SPid
+        new_subduction_zone_plate_id = old_TRENCHid
+        
+        new_convergence_data_sample = (
+            new_longitude,
+            new_latitude,
+            new_convergence_velocity_magnitude,
+            new_convergence_obliquity_degrees,
+            new_trench_absolute_velocity_magnitude,
+            new_trench_absolute_obliquity_degrees,
+            new_arc_length_degrees,
+            new_subducting_arc_normal_azimuth_degrees,
+            new_subducting_plate_id,
+            new_subduction_zone_plate_id)
+        
+        if output_distance_to_nearest_edge_of_trench:
+            # Convert distance in kms to degrees.
+            new_distance_to_nearest_edge_of_trench_degrees = math.degrees(old_distEdgeTotal / _EARTH_RADIUS_KMS)
+            
+            new_convergence_data_sample += (new_distance_to_nearest_edge_of_trench_degrees,)
+        
+        if output_distance_to_start_edge_of_trench:
+            # Convert distance in kms to degrees.
+            new_distance_to_start_edge_of_trench_degrees = math.degrees(old_distEdge / _EARTH_RADIUS_KMS)
+            
+            new_convergence_data_sample += (new_distance_to_start_edge_of_trench_degrees,)
+        
+        if output_convergence_velocity_components:
+            new_convergence_velocity_orthogonal = _MM_YR_TO_CM_YR * old_convPerp
+            new_convergence_velocity_parallel = _MM_YR_TO_CM_YR * -old_convPar
+            
+            # Should give same values as the following...
+            #
+            # # The orthogonal and parallel components are just magnitude multiplied by cosine and sine.
+            # new_convergence_velocity_orthogonal = (
+            #     math.cos(math.radians(new_convergence_obliquity_degrees)) * math.fabs(new_convergence_velocity_magnitude))
+            # new_convergence_velocity_parallel = (
+            #     math.sin(math.radians(new_convergence_obliquity_degrees)) * math.fabs(new_convergence_velocity_magnitude))
+            
+            new_convergence_data_sample += (new_convergence_velocity_orthogonal, new_convergence_velocity_parallel)
+        
+        if output_trench_absolute_velocity_components:
+            new_trench_absolute_velocity_orthogonal = _MM_YR_TO_CM_YR * old_orthTrench
+            new_trench_absolute_velocity_parallel = _MM_YR_TO_CM_YR * -old_parTrench
+            
+            # Should give same values as the following...
+            #
+            # # The orthogonal and parallel components are just magnitude multiplied by cosine and sine.
+            # new_trench_absolute_velocity_orthogonal = (
+            #     math.cos(math.radians(new_trench_absolute_obliquity_degrees)) * math.fabs(new_trench_absolute_velocity_magnitude))
+            # new_trench_absolute_velocity_parallel = (
+            #     math.sin(math.radians(new_trench_absolute_obliquity_degrees)) * math.fabs(new_trench_absolute_velocity_magnitude))
+            
+            new_convergence_data_sample += (new_trench_absolute_velocity_orthogonal, new_trench_absolute_velocity_parallel)
+        
+        if output_subducting_absolute_velocity or output_subducting_absolute_velocity_components:
+            # Subducting absolute velocity magnitude obtained parallel and orthogonal components.
+            new_subducting_absolute_velocity_magnitude = _MM_YR_TO_CM_YR * math.sqrt(old_parAbs * old_parAbs + old_orthAbs * old_orthAbs)
+            # The subducting absolute velocity magnitude is negative if subducting plate is moving toward the overriding plate.
+            if old_orthAbs > 0:
+                new_subducting_absolute_velocity_magnitude = -new_subducting_absolute_velocity_magnitude
+            
+            # Same reasoning as for convergence obliquity above.
+            new_subducting_absolute_obliquity_degrees = math.degrees(math.atan2(-old_parAbs, old_orthAbs))
+            
+            if output_subducting_absolute_velocity:
+                new_convergence_data_sample += (new_subducting_absolute_velocity_magnitude, new_subducting_absolute_obliquity_degrees)
+            if output_subducting_absolute_velocity_components:
+                new_subducting_absolute_velocity_orthogonal = _MM_YR_TO_CM_YR * old_orthAbs
+                new_subducting_absolute_velocity_parallel = _MM_YR_TO_CM_YR * -old_parAbs
+                
+                # Should give same values as the following...
+                #
+                # # The orthogonal and parallel components are just magnitude multiplied by cosine and sine.
+                # new_subducting_absolute_velocity_orthogonal = (
+                #     math.cos(math.radians(new_subducting_absolute_obliquity_degrees)) * math.fabs(new_subducting_absolute_velocity_magnitude))
+                # new_subducting_absolute_velocity_parallel = (
+                #     math.sin(math.radians(new_subducting_absolute_obliquity_degrees)) * math.fabs(new_subducting_absolute_velocity_magnitude))
+                
+                new_convergence_data_sample += (new_subducting_absolute_velocity_orthogonal, new_subducting_absolute_velocity_parallel)
+        
+        new_convergence_data.append(new_convergence_data_sample)
+    
+    return new_convergence_data
+
+
 # List of optional output parameters available to append to the output of each sample point.
 #
 # NOTE: This should be in the same order as output parameters are actually added.
