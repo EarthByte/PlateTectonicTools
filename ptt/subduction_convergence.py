@@ -698,7 +698,8 @@ def write_output_file(output_filename, output_data):
 
 def create_coverage_feature_from_convergence_data(
         subduction_convergence_data,
-        time):
+        time,
+        **kwargs):
     """Create a feature with a coverage geometry containing the calculated convergence and absolute velocity data.
     
     Parameters
@@ -713,19 +714,57 @@ def create_coverage_feature_from_convergence_data(
     -------
     pygplates.Feature
         The feature with a coverage geometry containing the calculated convergence and absolute velocity data.
+    
+    Notes
+    -----
+    The *kwargs* is the same as that of the *subduction_convergence* function , which is used to append extra data
+    to the output of each sample point. Here it is used to interpret the same output data and create scalar coverages.
+    
+    The following optional keyword arguments are supported by *kwargs*:
+
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | Name                                           | Type  | Default | Description                                                                     |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_distance_to_nearest_edge_of_trench      | bool  | False   | Append the distance (in degrees) along the trench line to the nearest           |
+    |                                                |       |         | trench edge to each returned sample point. The trench edge is the location      |
+    |                                                |       |         | on the current trench feature where the subducting or overriding plate changes. |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_distance_to_start_edge_of_trench        | bool  | False   | Append the distance (in degrees) along the trench line from the start edge of   |
+    |                                                |       |         | the trench to each returned sample point. The start of the trench is along the  |
+    |                                                |       |         | clockwise direction around the overriding plate.                                |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_convergence_velocity_components         | bool  | False   | Append the convergence velocity orthogonal and parallel                         |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                            |
+    |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
+    |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_trench_absolute_velocity_components     | bool  | False   | Append the trench plate absolute velocity orthogonal and parallel               |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                            |
+    |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
+    |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_subducting_absolute_velocity            | bool  | False   | Append the subducting plate absolute velocity magnitude (in cm/yr) and          |
+    |                                                |       |         | obliquity angle (in degrees) to each returned sample point.                     |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_subducting_absolute_velocity_components | bool  | False   | Append the subducting plate absolute velocity orthogonal and parallel           |
+    |                                                |       |         | components (in cm/yr) to each returned sample point.                            |
+    |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
+    |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
     """
     
+    #
+    # Process keyword arguments.
+    #
+    output_distance_to_nearest_edge_of_trench = kwargs.get('output_distance_to_nearest_edge_of_trench', False)
+    output_distance_to_start_edge_of_trench = kwargs.get('output_distance_to_start_edge_of_trench', False)
+    output_convergence_velocity_components = kwargs.get('output_convergence_velocity_components', False)
+    output_trench_absolute_velocity_components = kwargs.get('output_trench_absolute_velocity_components', False)
+    output_subducting_absolute_velocity = kwargs.get('output_subducting_absolute_velocity', False)
+    output_subducting_absolute_velocity_components = kwargs.get('output_subducting_absolute_velocity_components', False)
+    
     # Convert the list of tuples (one tuple per sample point) into a tuple of lists (one list per data parameter).
-    (all_lon,
-     all_lat,
-     all_convergence_velocity_magnitude_cm_per_yr,
-     all_convergence_obliquity_degrees,
-     all_trench_absolute_velocity_magnitude_cm_per_yr,
-     all_trench_absolute_obliquity_degrees,
-     all_subducting_length_degrees,
-     all_trench_normal_azimuth_degrees,
-     all_subducting_plate_id,
-     all_trench_plate_id) = zip(*subduction_convergence_data)
+    parameter_lists = zip(*subduction_convergence_data)
     
     # Put all convergence data for the current reconstruction time into a single feature.
     coverage_feature = pygplates.Feature()
@@ -733,18 +772,71 @@ def create_coverage_feature_from_convergence_data(
     # Make it only appear at 'time'.
     coverage_feature.set_valid_time(time + 0.5, time - 0.5)
     
+    # Extract the non-optional parameters.
+    all_lon = parameter_lists[0]
+    all_lat = parameter_lists[1]
+    all_convergence_velocity_magnitude = parameter_lists[2]
+    all_convergence_obliquity_degrees = parameter_lists[3]
+    all_trench_absolute_velocity_magnitude = parameter_lists[4]
+    all_trench_absolute_obliquity_degrees = parameter_lists[5]
+    all_subducting_length_degrees = parameter_lists[6]
+    all_trench_normal_azimuth_degrees = parameter_lists[7]
+    all_subducting_plate_id = parameter_lists[8]
+    all_trench_plate_id = parameter_lists[9]
+    
     # Add each data parameter as a separate scalar coverage.
     coverage_geometry = pygplates.MultiPointOnSphere(zip(all_lat, all_lon))
     coverage_scalars = {
-        pygplates.ScalarType.create_gpml('ConvergenceVelocityMagnitude') : all_convergence_velocity_magnitude_cm_per_yr,
+        pygplates.ScalarType.create_gpml('ConvergenceVelocityMagnitude') : all_convergence_velocity_magnitude,
         pygplates.ScalarType.create_gpml('ConvergenceObliquityDegrees') : all_convergence_obliquity_degrees,
-        pygplates.ScalarType.create_gpml('TrenchAbsoluteVelocityMagnitude') : all_trench_absolute_velocity_magnitude_cm_per_yr,
+        pygplates.ScalarType.create_gpml('TrenchAbsoluteVelocityMagnitude') : all_trench_absolute_velocity_magnitude,
         pygplates.ScalarType.create_gpml('TrenchAbsoluteObliquityDegrees') : all_trench_absolute_obliquity_degrees,
         pygplates.ScalarType.create_gpml('SubductingLengthDegrees') : all_subducting_length_degrees,
         pygplates.ScalarType.create_gpml('TrenchNormalAzimuthDegrees') : all_trench_normal_azimuth_degrees,
         pygplates.ScalarType.create_gpml('SubductingPlateId') : all_subducting_plate_id,
         pygplates.ScalarType.create_gpml('TrenchPlateId') : all_trench_plate_id,
     }
+    
+    # Extract the optional parameters.
+    optional_parameter_index = 10
+    
+    if output_distance_to_nearest_edge_of_trench:
+        all_distance_to_nearest_edge_of_trench_degrees = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('DistanceToNearestEdgeOfTrenchDegrees')] = all_distance_to_nearest_edge_of_trench_degrees
+        optional_parameter_index += 1
+    if output_distance_to_start_edge_of_trench:
+        all_distance_to_start_edge_of_trench_degrees = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('DistanceToStartEdgeOfTrenchDegrees')] = all_distance_to_start_edge_of_trench_degrees
+        optional_parameter_index += 1
+    if output_convergence_velocity_components:
+        all_convergence_velocity_orthogonal = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('ConvergenceVelocityOrthogonal')] = all_convergence_velocity_orthogonal
+        optional_parameter_index += 1
+        all_convergence_velocity_parallel = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('ConvergenceVelocityParallel')] = all_convergence_velocity_parallel
+        optional_parameter_index += 1
+    if output_trench_absolute_velocity_components:
+        all_trench_absolute_velocity_orthogonal = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('TrenchAbsoluteVelocityOrthogonal')] = all_trench_absolute_velocity_orthogonal
+        optional_parameter_index += 1
+        all_trench_absolute_velocity_parallel = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('TrenchAbsoluteVelocityParallel')] = all_trench_absolute_velocity_parallel
+        optional_parameter_index += 1
+    if output_subducting_absolute_velocity:
+        all_subducting_absolute_velocity_magnitude = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('SubductingAbsoluteVelocityMagnitude')] = all_subducting_absolute_velocity_magnitude
+        optional_parameter_index += 1
+        all_subducting_absolute_obliquity_degrees = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('SubductingAbsoluteObliquityDegrees')] = all_subducting_absolute_obliquity_degrees
+        optional_parameter_index += 1
+    if output_subducting_absolute_velocity_components:
+        all_subducting_absolute_velocity_orthogonal = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('SubductingAbsoluteVelocityOrthogonal')] = all_subducting_absolute_velocity_orthogonal
+        optional_parameter_index += 1
+        all_subducting_absolute_velocity_parallel = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('SubductingAbsoluteVelocityParallel')] = all_subducting_absolute_velocity_parallel
+        optional_parameter_index += 1
+    
     coverage_feature.set_geometry((coverage_geometry, coverage_scalars))
     
     return coverage_feature
@@ -761,7 +853,8 @@ def subduction_convergence_over_time(
         time_increment,
         velocity_delta_time = 1.0,
         anchor_plate_id = 0,
-        output_gpml_filename = None):
+        output_gpml_filename = None,
+        **kwargs):
     
     # Check the imported pygplates version.
     if pygplates.Version.get_imported_version() < PYGPLATES_VERSION_REQUIRED:
@@ -797,7 +890,8 @@ def subduction_convergence_over_time(
                 threshold_sampling_distance_radians,
                 time,
                 velocity_delta_time,
-                anchor_plate_id)
+                anchor_plate_id,
+                **kwargs)
         
         if output_data:
             output_filename = '{0}_{1:0.2f}.{2}'.format(output_filename_prefix, time, output_filename_extension)
@@ -805,7 +899,7 @@ def subduction_convergence_over_time(
             
             # Also keep track of convergence data if we need to write out a GPML file.
             if output_gpml_filename:
-                coverage_feature = create_coverage_feature_from_convergence_data(output_data, time)
+                coverage_feature = create_coverage_feature_from_convergence_data(output_data, time, **kwargs)
                 coverage_features.append(coverage_feature)
 
         # Increment the time further into the past.
@@ -816,6 +910,18 @@ def subduction_convergence_over_time(
         pygplates.FeatureCollection(coverage_features).write(output_gpml_filename)
     
     return 0 # Success
+
+
+# List of optional output parameters available to append to the output of each sample point.
+#
+# NOTE: This should be in the same order as output parameters are actually added.
+_OUTPUT_PARAMETER_NAME_LIST = [
+    'output_distance_to_nearest_edge_of_trench',
+    'output_distance_to_start_edge_of_trench',
+    'output_convergence_velocity_components',
+    'output_trench_absolute_velocity_components',
+    'output_subducting_absolute_velocity',
+    'output_subducting_absolute_velocity_components']
 
 
 if __name__ == '__main__':
@@ -853,6 +959,41 @@ if __name__ == '__main__':
       - trench normal azimuth angle (clockwise starting at North, ie, 0 to 360 degrees) at current point
       - subducting plate ID
       - trench plate ID
+      
+      - extra data can be appended by specifying optional extra output parameters using the '-x' command-line option.
+        
+        The order of any extra data is the same order in which the parameters are listed below.
+        But note that all parameters are optional, you only need to specify the ones you want.
+        
+        +------------------------------------------------+---------------------------------------------------------------------------------+
+        | Name                                           | Description                                                                     |
+        +------------------------------------------------+---------------------------------------------------------------------------------+
+        | output_distance_to_nearest_edge_of_trench      | Append the distance (in degrees) along the trench line to the nearest           |
+        |                                                | trench edge to each returned sample point. The trench edge is the location      |
+        |                                                | on the current trench feature where the subducting or overriding plate changes. |
+        +------------------------------------------------+---------------------------------------------------------------------------------+
+        | output_distance_to_start_edge_of_trench        | Append the distance (in degrees) along the trench line from the start edge of   |
+        |                                                | the trench to each returned sample point. The start of the trench is along the  |
+        |                                                | clockwise direction around the overriding plate.                                |
+        +------------------------------------------------+---------------------------------------------------------------------------------+
+        | output_convergence_velocity_components         | Append the convergence velocity orthogonal and parallel                         |
+        |                                                | components (in cm/yr) to each returned sample point.                            |
+        |                                                | Orthogonal is normal to trench in direction of overriding plate.                |
+        |                                                | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+        +------------------------------------------------+---------------------------------------------------------------------------------+
+        | output_trench_absolute_velocity_components     | Append the trench plate absolute velocity orthogonal and parallel               |
+        |                                                | components (in cm/yr) to each returned sample point.                            |
+        |                                                | Orthogonal is normal to trench in direction of overriding plate.                |
+        |                                                | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+        +------------------------------------------------+---------------------------------------------------------------------------------+
+        | output_subducting_absolute_velocity            | Append the subducting plate absolute velocity magnitude (in cm/yr) and          |
+        |                                                | obliquity angle (in degrees) to each returned sample point.                     |
+        +------------------------------------------------+---------------------------------------------------------------------------------+
+        | output_subducting_absolute_velocity_components | Append the subducting plate absolute velocity orthogonal and parallel           |
+        |                                                | components (in cm/yr) to each returned sample point.                            |
+        |                                                | Orthogonal is normal to trench in direction of overriding plate.                |
+        |                                                | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+        +------------------------------------------------+---------------------------------------------------------------------------------+
     
     The obliquity angles are in the range (-180 180). The range (0, 180) goes clockwise (when viewed from above the Earth) from the
     trench normal direction to the velocity vector. The range (0, -180) goes counter-clockwise.
@@ -930,6 +1071,14 @@ if __name__ == '__main__':
                 help='The delta time interval used to calculate velocities in My. '
                     'Defaults to {0} My.'.format(DEFAULT_VELOCITY_DELTA_TIME))
         
+        parser.add_argument('-x', '--extra_output_parameters', type=str, nargs='+',
+                metavar='output_parameter',
+                help='Optional extra output parameters to be appended to the usual (non-optional) '
+                     'output parameters for each sample point. '
+                     'Choices include {0}. '
+                     'The order in which they are output is in the same order as those choices.'.format(
+                         ', '.join(_OUTPUT_PARAMETER_NAME_LIST)))
+        
         parser.add_argument('-g', '--output_gpml_filename', type=str,
                 help='Optional GPML output filename to contain the subduction convergence data for all specified times. '
                      'This can then be loaded into GPlates to display the data as scalar coverages.')
@@ -963,6 +1112,14 @@ if __name__ == '__main__':
         else: # default...
             threshold_sampling_distance_radians = math.radians(DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES)
         
+        # Specify any optional output parameters to append for each sample point.
+        kwargs = {}
+        for extra_output_parameter in args.extra_output_parameters:
+            if extra_output_parameter in _OUTPUT_PARAMETER_NAME_LIST:
+                kwargs[extra_output_parameter] = True
+            else:
+                raise ValueError('{0} is not a valid output parameter'.format(extra_output_parameter))
+        
         return_code = subduction_convergence_over_time(
                 args.output_filename_prefix,
                 args.output_filename_extension,
@@ -974,7 +1131,8 @@ if __name__ == '__main__':
                 args.time_increment,
                 args.velocity_delta_time,
                 args.anchor_plate_id,
-                args.output_gpml_filename)
+                args.output_gpml_filename,
+                **kwargs)
         if return_code is None:
             sys.exit(1)
             
