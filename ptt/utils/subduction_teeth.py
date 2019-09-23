@@ -28,8 +28,6 @@ def tesselate_triangles(shapefilename, tesselation_radians, triangle_base_length
     for i in range(len(shp)):
         pts = np.array(shp.shape(i).points)
 
-        subd_sL.append(pts)
-
         cum_distance = 0.0
         for p in range(len(pts) - 1):
 
