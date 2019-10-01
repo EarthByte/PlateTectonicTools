@@ -363,7 +363,7 @@ def _ensure_sequence_accuracy(
             # Just use the sample midway between 'sample1' and 'sample2'.
             interpolated_sample_time = mid_sample_time
         
-        interpolated_sample = _add_accurate_sample(
+        interpolated_sample = _create_accurate_sample(
             rotation_model,
             interpolated_sample_time,
             sample1,
@@ -390,7 +390,7 @@ def _ensure_sequence_accuracy(
         parent_to_child_rotation_samples.sort(key = lambda sample: sample.get_time())
 
 
-def _add_accurate_sample(
+def _create_accurate_sample(
         rotation_model,
         interpolated_sample_time,
         sample1,
@@ -400,7 +400,7 @@ def _add_accurate_sample(
         parent_remove_plate_id,
         remove_plate_max_sample_time,
         threshold_rotation_accuracy_degrees):
-    """Create a new accurate interpolated sample if the difference between original and new rotation models exceeds a threshold."""
+    """Create a new accurate interpolated sample if the difference between original and new rotation models exceeds a threshold, otherwise None."""
     
     # Find the *original* rotation from parent plate to child plate (through removed plate).
     #
@@ -467,8 +467,8 @@ if __name__ == '__main__':
             except ValueError:
                 raise argparse.ArgumentTypeError("encountered a rotation threshold and threshold time interval that is not a number")
             
-            if threshold_rotation_accuracy_degrees <= 0 or threshold_rotation_accuracy_degrees > 90:
-                parser.error('rotation threshold must be in the range (0, 90]')
+            if threshold_rotation_accuracy_degrees < 0 or threshold_rotation_accuracy_degrees > 90:
+                parser.error('rotation threshold must be in the range [0, 90]')
             if threshold_time_interval <= 0:
                 parser.error('threshold time interval must be positive')
             
