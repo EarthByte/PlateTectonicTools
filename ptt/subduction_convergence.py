@@ -22,7 +22,7 @@
 #############################################################
 
 
-from __future__ import print_function
+
 import math
 import pygplates
 import warnings
@@ -764,7 +764,7 @@ def create_coverage_feature_from_convergence_data(
     output_subducting_absolute_velocity_components = kwargs.get('output_subducting_absolute_velocity_components', False)
     
     # Convert the list of tuples (one tuple per sample point) into a tuple of lists (one list per data parameter).
-    parameter_lists = zip(*subduction_convergence_data)
+    parameter_lists = list(zip(*subduction_convergence_data))
     
     # Put all convergence data for the current reconstruction time into a single feature.
     coverage_feature = pygplates.Feature()
@@ -785,7 +785,7 @@ def create_coverage_feature_from_convergence_data(
     all_trench_plate_id = parameter_lists[9]
     
     # Add each data parameter as a separate scalar coverage.
-    coverage_geometry = pygplates.MultiPointOnSphere(zip(all_lat, all_lon))
+    coverage_geometry = pygplates.MultiPointOnSphere(list(zip(all_lat, all_lon)))
     coverage_scalars = {
         pygplates.ScalarType.create_gpml('ConvergenceVelocityMagnitude') : all_convergence_velocity_magnitude,
         pygplates.ScalarType.create_gpml('ConvergenceObliquityDegrees') : all_convergence_obliquity_degrees,

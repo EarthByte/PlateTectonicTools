@@ -22,7 +22,7 @@
 ##################################################################################################
 
 
-from __future__ import print_function
+
 import sys
 import math
 import pygplates

@@ -24,10 +24,10 @@
 #############################################################################################################################
 
 
-from __future__ import print_function
+
 import math
 import pygplates
-import separate_ridge_transform_segments
+from . import separate_ridge_transform_segments
 import sys
 
 

@@ -70,13 +70,13 @@ def call_system_command(
         stdout, stderr = command.communicate(stdin)
     except ValueError as e:
         if print_errors:
-            print >>sys.stderr, "System command called with invalid arguments: ", e
+            print("System command called with invalid arguments: ", e, file=sys.stderr)
         if not raise_errors:
             return None
         raise
     except OSError as e:
         if print_errors:
-            print >>sys.stderr, "Unable to execute system command: ", args, " ", e
+            print("Unable to execute system command: ", args, " ", e, file=sys.stderr)
         if not raise_errors:
             return None
         raise
@@ -86,7 +86,7 @@ def call_system_command(
         command_return_code = command.poll()
         if command_return_code != check_return_code:
             if print_errors:
-                print >>sys.stderr, "System command failed: ", args, " return code: ", command_return_code
+                print("System command failed: ", args, " return code: ", command_return_code, file=sys.stderr)
             if not raise_errors:
                 return None
             

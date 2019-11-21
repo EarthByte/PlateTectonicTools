@@ -29,7 +29,7 @@
 #################################################################################################################
 
 
-from __future__ import print_function
+
 import math
 import os.path
 import pygplates
@@ -109,7 +109,7 @@ def separate_features_into_ridges_and_transforms(
     transform_segment_features = []
     
     # Iterate over groups of spreading features with the same begin time (time-of-appearance).
-    for begin_time, spreading_features_with_begin_time in spreading_features_grouped_by_begin_time.iteritems():
+    for begin_time, spreading_features_with_begin_time in spreading_features_grouped_by_begin_time.items():
         
         # Reconstruct the spreading features to their common birth time.
         reconstructed_spreading_features = []

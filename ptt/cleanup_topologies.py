@@ -24,7 +24,7 @@
 ##################################################################################################
 
 
-from __future__ import print_function
+
 import sys
 import math
 import pygplates
@@ -38,9 +38,9 @@ try:
 except AttributeError:
     # Python 3
     def itervalues(d):
-        return iter(d.values())
+        return iter(list(d.values()))
     def iteritems(d):
-        return iter(d.items())
+        return iter(list(d.items()))
     def listvalues(d):
         return list(d.values())
     def listitems(d):
@@ -48,13 +48,13 @@ except AttributeError:
 else:
     # Python 2
     def itervalues(d):
-        return d.itervalues()
+        return iter(d.values())
     def iteritems(d):
-        return d.iteritems()
+        return iter(d.items())
     def listvalues(d):
-        return d.values()
+        return list(d.values())
     def listitems(d):
-        return d.items()
+        return list(d.items())
 
 
 # Required pygplates version.
