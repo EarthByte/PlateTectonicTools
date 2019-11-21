@@ -62,12 +62,12 @@ if __name__ == "__main__":
           version           = PYPI_VERSION,
           description       = "Python tools for plate tectonic research",
           install_requires  = ['numpy'],
-          python_requires   = '>=2.7',
+          python_requires   = '>=3.7',
           packages          = ['ptt', 'ptt.utils'],
           package_data      = {'ptt': ['Examples/notebooks/*.ipynb',
                                        'Examples/data/*.gpmlz',
                                        'Examples/data/*.rot',
                                        'utils/*.py']},
-          classifiers       = ['Programming Language :: Python :: 2',
-                               'Programming Language :: Python :: 2.7']
+          classifiers       = ['Programming Language :: Python :: 3',
+                               'Programming Language :: Python :: 3.7']
           )
