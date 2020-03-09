@@ -319,13 +319,13 @@ def spreading_rates_dense(
                 spreading_velocity_magnitude = spreading_velocity_vector.get_magnitude()
 
 
+                # Angle range [0, 180]
                 spreading_obliquity_degrees = math.degrees(pygplates.Vector3D.angle_between(
                             spreading_velocity_vector, spreading_arc_normal))
-                # Anti-clockwise direction has range (0, -180) instead of (0, 180).
-                if pygplates.Vector3D.dot(spreading_velocity_vector, clockwise_direction) < 0:
-                    spreading_obliquity_degrees = -spreading_obliquity_degrees
-                if math.fabs(spreading_obliquity_degrees) > 90:
-                    spreading_velocity_magnitude = -spreading_velocity_magnitude
+                # Minimum deviation from 'spreading_arc_normal' and '-spreading_arc_normal'.
+                # Angle range [0, 90]
+                if spreading_obliquity_degrees > 90:
+                    spreading_obliquity_degrees = 180 - spreading_obliquity_degrees
 
                 # The data will be output in GMT format (ie, lon first, then lat, etc).
                 output_data.append((
