@@ -254,6 +254,16 @@ def subduction_convergence(
         if shared_boundary_section.get_feature().get_feature_type() != pygplates.FeatureType.gpml_subduction_zone:
             continue
         
+        # The trench length is the sum of the lengths of the shared sub-segments.
+        # The shared sub-segments represent portions of the trench with different subducting plates.
+        # We need the trench length to determine whether a point along the trench is closer to the start or end of trench.
+        trench_length_radians = math.fsum(
+            shared_sub_segment.get_resolved_geometry().get_arc_length()
+            for shared_sub_segment in shared_boundary_section.get_shared_sub_segments())
+        
+        # The distance-along-trench will accumulate as we traverse the shared sub-segments.
+        distance_along_trench_radians = 0.0
+
         # Iterate over the shared sub-segments of the current subducting line.
         # These are the parts of the subducting line that actually contribute to topological boundaries.
         for shared_sub_segment in shared_boundary_section.get_shared_sub_segments():
@@ -302,22 +312,27 @@ def subduction_convergence(
             if USING_PYGPLATES_VERSION_GREATER_EQUAL_22:
                 sub_segments_of_topological_line_sub_segment = shared_sub_segment.get_sub_segments()
                 if sub_segments_of_topological_line_sub_segment:
-                    # The trench is the entire topological line (not the individual sub-sub-segments).
-                    trench_length_radians = shared_sub_segment.get_resolved_geometry().get_arc_length()
-                    # The distance-along-trench will get accumulated by each sub-sub-segment.
-                    distance_along_trench_radians = 0.0
-                    
-                    # Iterate over the sub-sub-segments associated with the topological line.
+                    # Iterate over the sub-sub-segments associated with the topological line shared sub-segment.
                     for sub_sub_segment in sub_segments_of_topological_line_sub_segment:
                         trench_plate_id = sub_sub_segment.get_feature().get_reconstruction_plate_id()
-                        sub_segment_geometry = sub_sub_segment.get_resolved_geometry()
+
+                        sub_sub_segment_geometry = sub_sub_segment.get_resolved_geometry()
+                        sub_sub_segment_trench_normal_reversal = trench_normal_reversal
+                        # If sub-sub-segment was reversed when it contributed to the topological line shared sub-segment then
+                        # we need to use that reversed geometry so that it has the same order of points as the topological line.
+                        if sub_sub_segment.was_geometry_reversed_in_topology():
+                            # Create a new sub-sub-segment polyline with points in reverse order.
+                            sub_sub_segment_geometry = pygplates.PolylineOnSphere(sub_sub_segment_geometry[::-1])
+                            #  The trench normal direction is also reversed.
+                            sub_sub_segment_trench_normal_reversal = -trench_normal_reversal
+                        
                         _sub_segment_subduction_convergence(
                                 output_data,
                                 time,
-                                sub_segment_geometry,
+                                sub_sub_segment_geometry,
                                 trench_plate_id,
                                 subducting_plate_id,
-                                trench_normal_reversal,
+                                sub_sub_segment_trench_normal_reversal,
                                 trench_length_radians,
                                 distance_along_trench_radians,
                                 threshold_sampling_distance_radians,
@@ -327,12 +342,11 @@ def subduction_convergence(
                                 **kwargs)
                         
                         # Accumulate distance-along-trench.
-                        distance_along_trench_radians += sub_segment_geometry.get_arc_length()
+                        distance_along_trench_radians += sub_sub_segment_geometry.get_arc_length()
                         
                 else: # It's not a topological line...
                     trench_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
                     sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
-                    trench_length_radians = sub_segment_geometry.get_arc_length()
                     _sub_segment_subduction_convergence(
                             output_data,
                             time,
@@ -341,19 +355,22 @@ def subduction_convergence(
                             subducting_plate_id,
                             trench_normal_reversal,
                             trench_length_radians,
-                            0.0,  # distance_along_trench_radians
+                            distance_along_trench_radians,
                             threshold_sampling_distance_radians,
                             velocity_delta_time,
                             rotation_model,
                             anchor_plate_id,
                             **kwargs)
+                    
+                    # Accumulate distance-along-trench by length of sub-segment geometry.
+                    distance_along_trench_radians += sub_segment_geometry.get_arc_length()
+            
             else: # Cannot handle topological lines (so use overriding plate ID when one is detected)...
                 if isinstance(shared_boundary_section.get_topological_section(), pygplates.ResolvedTopologicalLine):
                     trench_plate_id = overriding_plate_id
                 else:
                     trench_plate_id = shared_sub_segment.get_feature().get_reconstruction_plate_id()
                 sub_segment_geometry = shared_sub_segment.get_resolved_geometry()
-                trench_length_radians = sub_segment_geometry.get_arc_length()
                 _sub_segment_subduction_convergence(
                         output_data,
                         time,
@@ -362,12 +379,15 @@ def subduction_convergence(
                         subducting_plate_id,
                         trench_normal_reversal,
                         trench_length_radians,
-                        0.0,  # distance_along_trench_radians
+                        distance_along_trench_radians,
                         threshold_sampling_distance_radians,
                         velocity_delta_time,
                         rotation_model,
                         anchor_plate_id,
                         **kwargs)
+                
+                # Accumulate distance-along-trench by length of sub-segment geometry.
+                distance_along_trench_radians += sub_segment_geometry.get_arc_length()
     
     # Return data sorted since it's easier to compare results (when at least lon/lat is sorted).
     return sorted(output_data)
@@ -764,7 +784,7 @@ def create_coverage_feature_from_convergence_data(
     output_subducting_absolute_velocity_components = kwargs.get('output_subducting_absolute_velocity_components', False)
     
     # Convert the list of tuples (one tuple per sample point) into a tuple of lists (one list per data parameter).
-    parameter_lists = zip(*subduction_convergence_data)
+    parameter_lists = list(zip(*subduction_convergence_data))
     
     # Put all convergence data for the current reconstruction time into a single feature.
     coverage_feature = pygplates.Feature()
