@@ -16,6 +16,8 @@
     51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 """
 
+from __future__ import print_function
+
 import subprocess
 import sys
 
@@ -39,14 +41,14 @@ import sys
 #    else returns None (which can be tested as if it was 'False').
 #
 def call_system_command(
-        args, # Command and its arguments - either a single string or a sequence of arguments (see subprocess.Popen()).
-        check_return_code=0, # Check command's return code with this value (set to None to avoid checking).
-        raise_errors=True, # Whether to raise an exception when there's an error (terminates calling script unless caught).
-        print_errors=True, # Whether to print an error message to stderr when there's an error.
-        stdin=None,   # Optional string to send to stdin of the command.
-        return_stdout=False, # Whether to capture, and return, stdout of the command,
-        return_stderr=False, # Whether to capture, and return, stderr of the command,
-        **subprocess_options): # Advanced options passed directly to subprocess.Popen().
+        args,  # Command and its arguments - either a single string or a sequence of arguments (see subprocess.Popen()).
+        check_return_code=0,  # Check command's return code with this value (set to None to avoid checking).
+        raise_errors=True,  # Whether to raise an exception when there's an error (terminates calling script unless caught).
+        print_errors=True,  # Whether to print an error message to stderr when there's an error.
+        stdin=None,  # Optional string to send to stdin of the command.
+        return_stdout=False,  # Whether to capture, and return, stdout of the command,
+        return_stderr=False,  # Whether to capture, and return, stderr of the command,
+        **subprocess_options):  # Advanced options passed directly to subprocess.Popen().
     
     # Whether to send stdin to command.
     if stdin is not None:
@@ -66,17 +68,17 @@ def call_system_command(
     
     # Execute command.
     try:
-        command = subprocess.Popen(args, stdin=stdin_pipe, stdout=stdout_pipe, stderr=stderr_pipe, **subprocess_options)
+        command = subprocess.Popen(args, stdin=stdin_pipe, stdout=stdout_pipe, stderr=stderr_pipe, universal_newlines=True, **subprocess_options)
         stdout, stderr = command.communicate(stdin)
     except ValueError as e:
         if print_errors:
-            print >>sys.stderr, "System command called with invalid arguments: ", e
+            print("System command called with invalid arguments: {0}".format(e), file=sys.stderr)
         if not raise_errors:
             return None
         raise
     except OSError as e:
         if print_errors:
-            print >>sys.stderr, "Unable to execute system command: ", args, " ", e
+            print("Unable to execute system command: {0} {1}".format(args, e), file=sys.stderr)
         if not raise_errors:
             return None
         raise
@@ -86,7 +88,7 @@ def call_system_command(
         command_return_code = command.poll()
         if command_return_code != check_return_code:
             if print_errors:
-                print >>sys.stderr, "System command failed: ", args, " return code: ", command_return_code
+                print("System command failed: {0} return code: {1}".format(args, command_return_code), file=sys.stderr)
             if not raise_errors:
                 return None
             
@@ -104,28 +106,28 @@ def call_system_command(
     return True
 
 
-#if __name__ == '__main__':
-#    
-#    # Windows 'dir' command (change to 'ls -l', for example, on Mac and Linux).
-#    call_system_command('dir /w', shell=True)
-#    call_system_command(['dir', '/w'], print_errors=False, shell=True)
-#    if not call_system_command(['dir', '/w'], raise_errors=False, shell=True):
-#        print 'Failed directory listing.'
-#    
-#    # Info on a grid file.
-#    call_system_command(['gmt', 'grdinfo', 'mohoGOCE180.nc'])
-#    
-#    # Sample a grid file at specified points.
-#    # Send stdin (the lon/lat points to sample) and receive stdout (the sampled raster values).
-#    output = call_system_command(["gmt", "grdtrack", "-nl", "-GmohoGOCE180.nc"], stdin='10 20\n-10 -20\n', return_stdout=True, return_stderr=True, raise_errors=False)
-#    # Check return value since we're not raising exceptions (due to "raise_errors=False").
-#    # Note: Need to test 'output' *before* attempting to extract tuple components from it.
-#    if output:
-#        stdout, stderr = output
-#        print stdout
-#    # Run again but only return stdout (not stderr).
-#    stdout = call_system_command(["gmt", "grdtrack", "-nl", "-GmohoGOCE180.nc"], stdin='10 20\n-10 -20\n', return_stdout=True, raise_errors=False)
-#    # Check return value since we're not raising exceptions (due to "raise_errors=False").
-#    if stdout is not None:
-#        print stdout
-#        pass
+#   if __name__ == '__main__':
+#
+#       # Windows 'dir' command (change to 'ls -l', for example, on Mac and Linux).
+#       call_system_command('dir /w', shell=True)
+#       call_system_command(['dir', '/w'], print_errors=False, shell=True)
+#       if not call_system_command(['dir', '/w'], raise_errors=False, shell=True):
+#           print 'Failed directory listing.'
+#
+#       # Info on a grid file.
+#       call_system_command(['gmt', 'grdinfo', 'mohoGOCE180.nc'])
+#
+#       # Sample a grid file at specified points.
+#       # Send stdin (the lon/lat points to sample) and receive stdout (the sampled raster values).
+#       output = call_system_command(["gmt", "grdtrack", "-nl", "-GmohoGOCE180.nc"], stdin='10 20\n-10 -20\n', return_stdout=True, return_stderr=True, raise_errors=False)
+#       # Check return value since we're not raising exceptions (due to "raise_errors=False").
+#       # Note: Need to test 'output' *before* attempting to extract tuple components from it.
+#       if output:
+#           stdout, stderr = output
+#           print stdout
+#       # Run again but only return stdout (not stderr).
+#       stdout = call_system_command(["gmt", "grdtrack", "-nl", "-GmohoGOCE180.nc"], stdin='10 20\n-10 -20\n', return_stdout=True, raise_errors=False)
+#       # Check return value since we're not raising exceptions (due to "raise_errors=False").
+#       if stdout is not None:
+#           print stdout
+#           pass

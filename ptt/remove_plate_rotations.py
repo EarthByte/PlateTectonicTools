@@ -29,7 +29,8 @@ import pygplates
 
 
 # Required pygplates version.
-# Need pygplates.RotationModel to clone rotation features by default.
+# Need pygplates.RotationModel to clone rotation features by default (revision 12).
+# Note that since revision 25 cloning is no longer necessary.
 PYGPLATES_VERSION_REQUIRED = pygplates.Version(12)
 
 
@@ -95,9 +96,10 @@ def remove_plates(
         # However if we create a new RotationModel *without* the removed plate sequence then we
         # avoid this issue altogether.
         #
-        # Note that RotationModel clones the current rotation features, so any subsequent
+        # Note that RotationModel clones the current rotation features (by default), so any subsequent
         # feature modifications (in this loop iteration) should not affect it.
         # However the RotationModel in the next loop iteration will be affected of course.
+        # UPDATE: Since pygplates revision 25 cloning is no longer necessary (and has been deprecated).
         rotation_model = pygplates.RotationModel(rotation_feature_collections)
         
         # Rotation sequences with the current remove plate ID as the *moving* plate ID.

@@ -20,6 +20,8 @@
 
 #### GPML Tools ####
 
+from __future__ import print_function
+
 import pygplates as pgp
 import datetime
 import time
@@ -66,28 +68,28 @@ def filterGPML(**kwargs):
 
 
                 if ageExistsWindow[1] > ageExistsWindow[0]:
-                    print " "
-                    print "ERROR - Age exists window end age older than begin age: " + str(ageExistsWindow[1])
+                    print(" ")
+                    print("ERROR - Age exists window end age older than begin age: " + str(ageExistsWindow[1]))
                     
 
             elif parameter == filterProperties[8]:
                 boundingBox = value
 
                 if pgp.LatLonPoint.is_valid_longitude(boundingBox[0]) is False:
-                    print " "
-                    print "ERROR - Bounding box longitude is not valid: " + str(boundingBox[0])
+                    print(" ")
+                    print("ERROR - Bounding box longitude is not valid: " + str(boundingBox[0]))
                     
                 if pgp.LatLonPoint.is_valid_longitude(boundingBox[1]) is False:
-                    print " "
-                    print "ERROR - Bounding box longitude is not valid: " + str(boundingBox[1])
+                    print(" ")
+                    print("ERROR - Bounding box longitude is not valid: " + str(boundingBox[1]))
                     
                 if pgp.LatLonPoint.is_valid_latitude(boundingBox[2]) is False:
-                    print " "
-                    print "ERROR - Bounding box latitude is not valid: " + str(boundingBox[2])
+                    print(" ")
+                    print("ERROR - Bounding box latitude is not valid: " + str(boundingBox[2]))
                     
                 if pgp.LatLonPoint.is_valid_latitude(boundingBox[3]) is False:
-                    print " "
-                    print "ERROR - Bounding box latitude is not valid: " + str(boundingBox[3])
+                    print(" ")
+                    print("ERROR - Bounding box latitude is not valid: " + str(boundingBox[3]))
                     
 
             elif parameter == filterProperties[9]:
@@ -122,9 +124,9 @@ def filterGPML(**kwargs):
 
 
         else:
-            print " "
-            print "ERROR - Filter criteria not found: " + str(parameter)
-            print " "
+            print(" ")
+            print("ERROR - Filter criteria not found: " + str(parameter))
+            print(" ")
             
 
 
@@ -135,39 +137,39 @@ def filterGPML(**kwargs):
 
     featureCollection = pgp.FeatureCollectionFileFormatRegistry()
 
-    print " "
-    print "--------------------------------------------"
-    print " ### GPMLTools - filterGPML ###"
+    print(" ")
+    print("--------------------------------------------")
+    print(" ### GPMLTools - filterGPML ###")
 
     # Check for existing output directory and create it if not found
     if not os.path.exists("output"):
         os.makedirs("output")
-        print " "
-        print "Housekeeping:"
-        print "    No output folder found. Folder 'output' created."
+        print(" ")
+        print("Housekeeping:")
+        print("    No output folder found. Folder 'output' created.")
 
     # Check for existing output file with same name and remove if found
     if os.path.isfile("output/output.gpml"):
         os.remove("output/output.gpml")
-        print " "
-        print "Housekeeping:"
-        print "    Previous 'output.gpml' found in destination folder. File removed for new filter sequence."
+        print(" ")
+        print("Housekeeping:")
+        print("    Previous 'output.gpml' found in destination folder. File removed for new filter sequence.")
 
 
     try:
         feature = featureCollection.read(inputFile)
         feature1 = featureCollection.read(inputFile)
-        print " "
-        print "Data handling:"
-        print "    Successfully loaded data file:  '" + str(inputFile) + "'"
-        print "       - File contains " + str(len(feature)) + " features."
+        print(" ")
+        print("Data handling:")
+        print("    Successfully loaded data file:  '" + str(inputFile) + "'")
+        print("       - File contains " + str(len(feature)) + " features.")
 
     except pgp.OpenFileForReadingError:
-        print " "
+        print(" ")
         print("    ERROR - File read error in: '" + inputFile + "'. Is this a valid GPlates file?")
         
     except pgp.FileFormatNotSupportedError:
-        print " "
+        print(" ")
         print("    ERROR - File format not supported: '" + inputFile + "'. Please check the file name and try again")
         
 
@@ -175,8 +177,8 @@ def filterGPML(**kwargs):
 
     #Filter data
 
-    print " "
-    print "Filter sequence:"
+    print(" ")
+    print("Filter sequence:")
 
     previousFilter = 0
 
@@ -289,20 +291,20 @@ def filterGPML(**kwargs):
                         
 
             if cascade == False:
-                print "Oooooh, you found the secret command..."
-                print " "
-                print "    1. Filtering data by reconstruction plate ID: " + str(rPlateID) + " and conjugate plate ID: " + str(cPlateID)
-                print "       - Found " + str(len(f1_result)) + " feature(s)."
+                print("Oooooh, you found the secret command...")
+                print(" ")
+                print("    1. Filtering data by reconstruction plate ID: " + str(rPlateID) + " and conjugate plate ID: " + str(cPlateID))
+                print("       - Found " + str(len(f1_result)) + " feature(s).")
 
                 cascade = True
 
             else:
 
-                print " "
-                print "    1. Filtering data by reconstruction plate ID(s): " + str(rPlateID)
-                print "       - Found " + str(len(f1_result)) + " feature(s)."
+                print(" ")
+                print("    1. Filtering data by reconstruction plate ID(s): " + str(rPlateID))
+                print("       - Found " + str(len(f1_result)) + " feature(s).")
 
-            print " "
+            print(" ")
 
             previousFilter = 1
 
@@ -335,9 +337,9 @@ def filterGPML(**kwargs):
                                 # Append filtered data to associated Feature Collection
                                 f2_result.add(feature)
 
-            print "    2. Filtering data by conjugate plate ID(s): " + str(cPlateID)
-            print "       - Found " + str(len(f2_result)) + " feature(s)."
-            print " "
+            print("    2. Filtering data by conjugate plate ID(s): " + str(cPlateID))
+            print("       - Found " + str(len(f2_result)) + " feature(s).")
+            print(" ")
 
             previousFilter = 2
 
@@ -356,9 +358,9 @@ def filterGPML(**kwargs):
                 if begin_time <= ageAppearWindow[0] and begin_time >= ageAppearWindow[1]:
                     f3_result.add(feature)
 
-            print "    3. Filtering data by age of appearance window: " + str(ageAppearWindow[0]) + " - " + str(ageAppearWindow[1]) + " Ma"
-            print "       - Found " + str(len(f3_result)) + " feature(s)."
-            print " "
+            print("    3. Filtering data by age of appearance window: " + str(ageAppearWindow[0]) + " - " + str(ageAppearWindow[1]) + " Ma")
+            print("       - Found " + str(len(f3_result)) + " feature(s).")
+            print(" ")
 
             previousFilter = 3
 
@@ -377,9 +379,9 @@ def filterGPML(**kwargs):
                 if end_time <= ageDisappearWindow[0] and end_time >= ageDisappearWindow[1]:
                     f4_result.add(feature)
 
-            print "    4. Filtering data by age of disappearance window: " + str(ageDisappearWindow[0]) + " - " + str(ageDisappearWindow[1]) + " Ma"
-            print "       - Found " + str(len(f4_result)) + " feature(s)."
-            print " "
+            print("    4. Filtering data by age of disappearance window: " + str(ageDisappearWindow[0]) + " - " + str(ageDisappearWindow[1]) + " Ma")
+            print("       - Found " + str(len(f4_result)) + " feature(s).")
+            print(" ")
 
             previousFilter = 4
 
@@ -408,9 +410,9 @@ def filterGPML(**kwargs):
                                 f5_result.add(feature)
                                 break
 
-            print "    5. Filtering data by geographic bounding box: " + str(boundingBox[0]) + "/" + str(boundingBox[1]) + "/" + str(boundingBox[2]) + "/" + str(boundingBox[3])
-            print "       - Found " + str(len(f5_result)) + " feature(s)."
-            print " "
+            print("    5. Filtering data by geographic bounding box: " + str(boundingBox[0]) + "/" + str(boundingBox[1]) + "/" + str(boundingBox[2]) + "/" + str(boundingBox[3]))
+            print("       - Found " + str(len(f5_result)) + " feature(s).")
+            print(" ")
 
             previousFilter = 5
 
@@ -432,9 +434,9 @@ def filterGPML(**kwargs):
                 elif begin_time <= ageExistsWindow[0] and end_time >= ageExistsWindow[1] and end_time <= ageExistsWindow[1]:
                     f6_result.add(feature)
 
-            print "    6. Filtering data by age of existence window: " + str(ageExistsWindow[0]) + " - " + str(ageExistsWindow[1]) + " Ma"
-            print "       - Found " + str(len(f6_result)) + " feature(s)."
-            print " "
+            print("    6. Filtering data by age of existence window: " + str(ageExistsWindow[0]) + " - " + str(ageExistsWindow[1]) + " Ma")
+            print("       - Found " + str(len(f6_result)) + " feature(s).")
+            print(" ")
 
             previousFilter = 6
 
@@ -463,16 +465,16 @@ def filterGPML(**kwargs):
                         pcb_count += 1
 
 
-            print "    7. Filtering data by feature type(s): " + str(featureType)
+            print("    7. Filtering data by feature type(s): " + str(featureType))
 
             if "Isochron" in featureType:
-                print "       - Found " + str(iso_count) + " Isochron(s)."
+                print("       - Found " + str(iso_count) + " Isochron(s).")
             if "MidOceanRidge" in featureType:
-                print "       - Found " + str(mor_count) + " MidOceanRidge(s)."
+                print("       - Found " + str(mor_count) + " MidOceanRidge(s).")
             if "PassiveContinentalBoundary" in featureType:
-                print "       - Found " + str(pcb_count) + " PassiveContinentalBoundary(s)."
+                print("       - Found " + str(pcb_count) + " PassiveContinentalBoundary(s).")
 
-            print " "
+            print(" ")
 
             previousFilter = 7
 
@@ -504,18 +506,18 @@ def filterGPML(**kwargs):
                         if str(geometry) == "MultiPointOnSphere":
                             multiPointCount += 1
 
-            print "    8. Filtering data by feature geometries present: " + str(geometryType)
+            print("    8. Filtering data by feature geometries present: " + str(geometryType))
 
             if "PolylineOnSphere" in geometryType:
-                print "       - Found " + str(polylineCount) + " PolylineOnSphere(s)."
+                print("       - Found " + str(polylineCount) + " PolylineOnSphere(s).")
             if "PolygonOnSphere" in geometryType:
-                print "       - Found " + str(polygonCount) + " PolygonOnSphere(s)."
+                print("       - Found " + str(polygonCount) + " PolygonOnSphere(s).")
             if "PointOnSphere" in geometryType:
-                print "       - Found " + str(pointCount) + " PointOnSphere(s)."
+                print("       - Found " + str(pointCount) + " PointOnSphere(s).")
             if "MultiPointOnSphere" in geometryType:
-                print "       - Found " + str(multiPointCount) + " MultiPointOnSphere(s)."
+                print("       - Found " + str(multiPointCount) + " MultiPointOnSphere(s).")
 
-            print " "
+            print(" ")
 
             previousFilter = 8
 
@@ -530,9 +532,9 @@ def filterGPML(**kwargs):
                     if str(feature.get_feature_id()).lower() == str(id).lower():
                         f9_result.add(feature)
 
-            print "    9. Filtering data by feature ID: " + str(featureID)
-            print "       - Found " + str(len(f9_result)) + " feature(s)."
-            print " "
+            print("    9. Filtering data by feature ID: " + str(featureID))
+            print("       - Found " + str(len(f9_result)) + " feature(s).")
+            print(" ")
 
             previousFilter = 9
 
@@ -550,9 +552,9 @@ def filterGPML(**kwargs):
                     if names.lower() in feature_name.lower():
                         f10_result.add(feature)
 
-            print "    10. Filtering data by feature name: " + str(featureName)
-            print "       - Found " + str(len(f10_result)) + " feature(s)."
-            print " "
+            print("    10. Filtering data by feature name: " + str(featureName))
+            print("       - Found " + str(len(f10_result)) + " feature(s).")
+            print(" ")
 
             previousFilter = 10
 
@@ -596,7 +598,7 @@ def filterGPML(**kwargs):
                     # Special case if SubductionZone - need to incorporate start age
                     if str(feature.get_feature_type()) == "gpml:SubductionZone":
 
-                        #print feature.get_name()
+                        #print(feature.get_name())
                         sz_age_array = []
 
                         for property in feature:
@@ -607,7 +609,7 @@ def filterGPML(**kwargs):
                         
                         if "gpml:subductionZoneAge" not in sz_age_array:
                                 
-                            #print feature.get_name()
+                            #print(feature.get_name())
                             feature.add(pgp.PropertyName.create_gpml('subductionZoneAge'), pgp.XsDouble(begin_time))
 
 
@@ -632,10 +634,10 @@ def filterGPML(**kwargs):
                     f11b_result.add(feature)
 
                 
-            print "    11. File truncated by age boundary: " + str(feature_truncate_age) + " Ma"
-            print "       - Created " + str(len(f11a_result)) + " feature(s) older than truncation boundary."
-            print "       - Created " + str(len(f11b_result)) + " feature(s) younger than truncation boundary."
-            print " "
+            print("    11. File truncated by age boundary: " + str(feature_truncate_age) + " Ma")
+            print("       - Created " + str(len(f11a_result)) + " feature(s) older than truncation boundary.")
+            print("       - Created " + str(len(f11b_result)) + " feature(s) younger than truncation boundary.")
+            print(" ")
 
             previousFilter = 11
 
@@ -654,23 +656,23 @@ def filterGPML(**kwargs):
             outputFeatureCollection1 = pgp.FeatureCollectionFileFormatRegistry()
             outputFeatureCollection1.write(iso_output1, "output/>" + str(feature_truncate_age) + "Ma_" + str(outputFile))
 
-            print " "
-            print "Output file 1:"
-            print "    ../output/" + ">" + str(feature_truncate_age) + "Ma_"+ str(outputFile)
-            print " "
-            print "Process took " + str(round(time.time() - start, 2)) + " seconds."
-            print " "
+            print(" ")
+            print("Output file 1:")
+            print("    ../output/" + ">" + str(feature_truncate_age) + "Ma_"+ str(outputFile))
+            print(" ")
+            print("Process took " + str(round(time.time() - start, 2)) + " seconds.")
+            print(" ")
 
         if len(iso_output2) != 0:
             
             outputFeatureCollection2 = pgp.FeatureCollectionFileFormatRegistry()
             outputFeatureCollection2.write(iso_output2, "output/<" + str(feature_truncate_age) + "Ma_" + str(outputFile))
 
-            print "Output file 2:"
-            print "    ../output/" + "<" + str(feature_truncate_age) + "Ma_"+ str(outputFile)
-            print " "
-            print "Process took " + str(round(time.time() - start, 2)) + " seconds."
-            print "--------------------------------------------"
+            print("Output file 2:")
+            print("    ../output/" + "<" + str(feature_truncate_age) + "Ma_"+ str(outputFile))
+            print(" ")
+            print("Process took " + str(round(time.time() - start, 2)) + " seconds.")
+            print("--------------------------------------------")
 
 
     else:
@@ -680,8 +682,8 @@ def filterGPML(**kwargs):
         outputFeatureCollection = pgp.FeatureCollectionFileFormatRegistry()
         outputFeatureCollection.write(iso_output, outputFile)
 
-        print "Output file:"
-        print str(outputFile)
-        print " "
-        print "Process took " + str(round(time.time() - start, 2)) + " seconds."
-        print "--------------------------------------------"
+        print("Output file:")
+        print(str(outputFile))
+        print(" ")
+        print("Process took " + str(round(time.time() - start, 2)) + " seconds.")
+        print("--------------------------------------------")

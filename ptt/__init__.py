@@ -1,5 +1,5 @@
 from .documentation import install_documentation
-import utils
+from . import utils
 from . import subduction_convergence
 from . import ridge_spreading_rate
 from . import cleanup_topologies
