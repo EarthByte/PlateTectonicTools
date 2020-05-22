@@ -52,6 +52,7 @@ def resolve_topologies(rotation_model, topological_features, reconstruction_time
     subduction_boundary_section_features = []
     left_subduction_boundary_section_features = []
     right_subduction_boundary_section_features = []
+    other_boundary_section_features = []
 
     # Iterate over the resolved topologies.
     for resolved_topology in resolved_topologies:
@@ -79,9 +80,13 @@ def resolve_topologies(rotation_model, topological_features, reconstruction_time
                     left_subduction_boundary_section_features.extend(boundary_section_features)
                 elif polarity == 'Right':
                     right_subduction_boundary_section_features.extend(boundary_section_features)
-        else:
-            # Put all ridges in one collection/file.
+
+        elif shared_boundary_section.get_feature().get_feature_type() == pygplates.FeatureType.create_gpml('MidOceanRidge'):
             ridge_transform_boundary_section_features.extend(boundary_section_features)
+
+        else:
+            other_boundary_section_features.extend(boundary_section_features)
+
 
     if resolved_topology_features:
         # Put the features in a feature collection so we can write them to a file.
@@ -117,6 +122,13 @@ def resolve_topologies(rotation_model, topological_features, reconstruction_time
         right_subduction_boundary_section_features_filename = '{0}subduction_boundaries_sR_{1:0.2f}Ma.{2}'.format(
                 output_filename_prefix, reconstruction_time, output_filename_extension)
         right_subduction_boundary_section_feature_collection.write(right_subduction_boundary_section_features_filename)
+
+    if other_boundary_section_features:
+        # Put the features in a feature collection so we can write them to a file.
+        other_boundary_section_feature_collection = pygplates.FeatureCollection(other_boundary_section_features)
+        other_boundary_section_features_filename = '{0}other_boundaries_{1:0.2f}Ma.{2}'.format(
+                output_filename_prefix, reconstruction_time, output_filename_extension)
+        other_boundary_section_feature_collection.write(other_boundary_section_features_filename)
 
 
 if __name__ == "__main__":
