@@ -389,8 +389,7 @@ def subduction_convergence(
                 # Accumulate distance-along-trench by length of sub-segment geometry.
                 distance_along_trench_radians += sub_segment_geometry.get_arc_length()
     
-    # Return data sorted since it's easier to compare results (when at least lon/lat is sorted).
-    return sorted(output_data)
+    return output_data
 
 
 def _sub_segment_subduction_convergence(
