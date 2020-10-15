@@ -1,4 +1,4 @@
-## To install locally: python setup.py build && python setup.py install
+## To install locally: python -m pip install .
 ## (If there are problems with installation of the documentation, it may be that
 ##  the egg file is out of sync and will need to be manually deleted - see error message
 ##  for details of the corrupted zip file. )
@@ -6,8 +6,9 @@
 ## To push a version through to pip.
 ##  - Make sure it installs correctly locally as above
 ##  - Update the version information in this file
-##  - python setup.py sdist upload -r pypitest  # for the test version
-##  - python setup.py sdist upload -r pypi      # for the real version
+##  - python setup.py sdist
+##  - python -m twine upload -r testpypi dist/*  # for the test version
+##  - python -m twine upload -r pypi     dist/*  # for the real version
 ##
 ## (see http://peterdowns.com/posts/first-time-with-pypi.html)
 
@@ -17,7 +18,7 @@ from os import path
 import io
 
 ## in development set version to none and ...
-PYPI_VERSION = "0.1"
+PYPI_VERSION = "0.2"
 
 # Return the git revision as a string (from numpy)
 def git_version():
