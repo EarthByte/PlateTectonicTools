@@ -69,5 +69,6 @@ if __name__ == "__main__":
                                        'Examples/data/*.rot',
                                        'utils/*.py']},
           classifiers       = ['Programming Language :: Python :: 2',
-                               'Programming Language :: Python :: 2.7']
+                               'Programming Language :: Python :: 2.7',
+                               'Programming Language :: Python :: 3']
           )
