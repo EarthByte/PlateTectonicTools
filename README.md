@@ -26,8 +26,7 @@ ptt.install_documentation(path="PTT-Notebooks")
 
 ### Dependencies
 
-You will need **Python 2.7**.
-Also, the following packages are required:
+The following Python packages are required:
 
 - [`numpy`](http://numpy.org)
 - [`scipy`](https://scipy.org)
