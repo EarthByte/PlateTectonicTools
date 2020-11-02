@@ -73,6 +73,7 @@ def spreading_rates(
     
     Returns: List of the tuples described above.
     """
+    time = float(time)
     
     # Turn rotation data into a RotationModel (if not already).
     rotation_model = pygplates.RotationModel(rotation_features_or_model)

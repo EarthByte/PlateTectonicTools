@@ -225,6 +225,7 @@ def subduction_convergence(
     |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
     +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
     """
+    time = float(time)
     
     # Check the imported pygplates version.
     if pygplates.Version.get_imported_version() < PYGPLATES_VERSION_REQUIRED:
