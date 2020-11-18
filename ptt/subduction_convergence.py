@@ -37,6 +37,9 @@ USING_PYGPLATES_VERSION_GREATER_EQUAL_22 = (hasattr(pygplates, 'Version') and py
 # PyGPlates version 23 has a method to get overriding and subducting plates.
 USING_PYGPLATES_VERSION_GREATER_EQUAL_23 = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(23))
 
+# PyGPlates version 30 has a method to get only the subducting plate.
+USING_PYGPLATES_VERSION_GREATER_EQUAL_30 = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(30))
+
 # The default threshold sampling distance along trenches (subduction zones).
 DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES = 0.5
 DEFAULT_THRESHOLD_SAMPLING_DISTANCE_KMS = math.radians(DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES) * pygplates.Earth.equatorial_radius_in_kms
@@ -51,6 +54,10 @@ DEFAULT_VELOCITY_DELTA_TIME = 1
 # Determine the overriding and subducting plates of the subduction shared sub-segment.
 #
 # Note: This is now a method in PyGPlates version 23 called pygplates.ResolvedTopologicalSharedSubSegment.get_overriding_and_subducting_plates().
+#
+# NOTE: This is no longer needed since the overriding plate is no longer needed (provided you are using pyGPlates version 22 or above).
+#       We now only need the subducting plate ID and the trench plate ID (or plate IDs of trench sub-sub-segments if trench is a deforming line).
+#       This function is only used when a version of pyGPlates older than version 22 is used.
 def find_overriding_and_subducting_plates(subduction_shared_sub_segment):
     
     # Get the subduction polarity of the nearest subducting line.
@@ -100,6 +107,69 @@ def find_overriding_and_subducting_plates(subduction_shared_sub_segment):
         return
     
     return (overriding_plate, subducting_plate, subduction_polarity)
+
+
+# Determine just the subducting plate of the subduction shared sub-segment.
+#
+# Note: This is now a method in PyGPlates version 30 called pygplates.ResolvedTopologicalSharedSubSegment.get_subducting_plate().
+def find_subducting_plate(subduction_shared_sub_segment):
+    
+    # Get the subduction polarity of the nearest subducting line.
+    subduction_polarity = subduction_shared_sub_segment.get_feature().get_enumeration(pygplates.PropertyName.gpml_subduction_polarity)
+    if (not subduction_polarity) or (subduction_polarity == 'Unknown'):
+        return
+
+    subducting_plate = None
+    
+    # Iterate over the resolved topologies sharing the subduction sub-segment.
+    # We are looking for exactly one subducting plate.
+    #
+    # There can be zero, one or more overriding plates but that does not affect us (since only looking for subducting plate).
+    # This actually makes things more robust because it's possible the topologies were built in such a way that a subduction line
+    # is inadvertently duplicated such that the subducting plate uses one of the subduction lines as its boundary and the overriding plate
+    # uses the other. In this case the subducting line attached to the subducting plate will not also be attached to the overriding plate
+    # and hence there will be zero overriding plates here.
+    # Another example is having two overriding plates (or at least there will be two topologies on the overriding side of the subduction line).
+    #
+    # So all these overriding cases do not affect us, which means we will actually get a more accurate total subduction zone length in this script
+    # because we are not forced to ignore these overriding cases (normally we would be forced to find *one* overriding plate if we were looking for
+    # both the subducting and overriding plates). And also we're not counting duplicate subduction lines because we only count one of the duplicate
+    # subduction lines (the one attached to the subducting plate). However we will still have a problem if not exactly one subducting plate is found.
+    sharing_resolved_topologies = subduction_shared_sub_segment.get_sharing_resolved_topologies()
+    geometry_reversal_flags = subduction_shared_sub_segment.get_sharing_resolved_topology_geometry_reversal_flags()
+    for index in range(len(sharing_resolved_topologies)):
+
+        sharing_resolved_topology = sharing_resolved_topologies[index]
+        geometry_reversal_flag = geometry_reversal_flags[index]
+
+        if sharing_resolved_topology.get_resolved_boundary().get_orientation() == pygplates.PolygonOnSphere.Orientation.clockwise:
+            # The current topology sharing the subducting line has clockwise orientation (when viewed from above the Earth).
+            # If the overriding plate (subduction polarity) is to the 'left' of the subducting line (when following its vertices in order)
+            # and the subducting line is not reversed when contributing to the topology then that topology is the subducting plate.
+            # A similar test applies to the 'right' but with the subducting line reversed in the topology.
+            if ((subduction_polarity == 'Left' and not geometry_reversal_flag) or
+                (subduction_polarity == 'Right' and geometry_reversal_flag)):
+                # If we've already previously found the subducting plate then it's ambiguous, so return None.
+                if subducting_plate is not None:
+                    return
+                subducting_plate = sharing_resolved_topology
+        else:
+            # The current topology sharing the subducting line has counter-clockwise orientation (when viewed from above the Earth).
+            # If the overriding plate (subduction polarity) is to the 'left' of the subducting line (when following its vertices in order)
+            # and the subducting line is reversed when contributing to the topology then that topology is the subducting plate.
+            # A similar test applies to the 'right' but with the subducting line not reversed in the topology.
+            if ((subduction_polarity == 'Left' and geometry_reversal_flag) or
+                (subduction_polarity == 'Right' and not geometry_reversal_flag)):
+                # If we've already previously found the subducting plate then it's ambiguous, so return None.
+                if subducting_plate is not None:
+                    return
+                subducting_plate = sharing_resolved_topology
+    
+    # Unable to find subducting plate, so return None.
+    if subducting_plate is None:
+        return
+    
+    return (subducting_plate, subduction_polarity)
 
 
 def subduction_convergence(
@@ -269,23 +339,48 @@ def subduction_convergence(
         # These are the parts of the subducting line that actually contribute to topological boundaries.
         for shared_sub_segment in shared_boundary_section.get_shared_sub_segments():
         
-            # Find the overriding and subducting plates on either side of the shared sub-segment.
-            if USING_PYGPLATES_VERSION_GREATER_EQUAL_23:
-                # PyGPlates version 23 has a method to get overriding and subducting plates.
-                overriding_and_subducting_plates = shared_sub_segment.get_overriding_and_subducting_plates(return_subduction_polarity=True)
+            # If we're using pyGPlates version 22 or above then we don't need the overriding plate (only need subducting plate).
+            #
+            # Not having to find the overriding plate means we will actually get a more accurate total subduction zone length in this script.
+            # This is because we are not forced to ignore trench sections where there's not exactly one overriding plate. And also we're not
+            # counting duplicate subduction lines (where one duplicate is attached only to the overriding plate and the other attached only
+            # to the subducting plate) because we only count the subduction line attached to the subducting plate.
+            # However we will still have a problem if not exactly one subducting plate is found.
+            if USING_PYGPLATES_VERSION_GREATER_EQUAL_22:
+                # Find the subducting plate of the shared sub-segment.
+                if USING_PYGPLATES_VERSION_GREATER_EQUAL_30:
+                    # PyGPlates version 30 has a method to get only the subducting plate (we don't need the overriding plate).
+                    subducting_plate_and_polarity = shared_sub_segment.get_subducting_plate(return_subduction_polarity=True)
+                else:
+                    # Otherwise call the function defined above.
+                    subducting_plate_and_polarity = find_subducting_plate(shared_sub_segment)
+                if not subducting_plate_and_polarity:
+                    warnings.warn('Unable to find the subducting plate of the subducting sub-segment "{0}" at {1}Ma.\n'
+                                  '    Either the subduction polarity is not properly set or there is not exactly one subducting plate sharing the sub-segment.\n'
+                                  '    Ignoring current sub-segment.'.format(
+                                      shared_sub_segment.get_feature().get_name(), time),
+                                  RuntimeWarning)
+                    continue
+                subducting_plate, subduction_polarity = subducting_plate_and_polarity
+                subducting_plate_id = subducting_plate.get_feature().get_reconstruction_plate_id()
             else:
-                # Otherwise call the function defined above.
-                overriding_and_subducting_plates = find_overriding_and_subducting_plates(shared_sub_segment)
-            if not overriding_and_subducting_plates:
-                warnings.warn('Unable to find the overriding and subducting plates of the subducting sub-segment "{0}" at {1}Ma.\n'
-                              '    Either the subduction polarity is not properly set or there are not exactly 2 topologies sharing the sub-segment.\n'
-                              '    Ignoring current sub-segment.'.format(
-                                  shared_sub_segment.get_feature().get_name(), time),
-                              RuntimeWarning)
-                continue
-            overriding_plate, subducting_plate, subduction_polarity = overriding_and_subducting_plates
-            overriding_plate_id = overriding_plate.get_feature().get_reconstruction_plate_id()
-            subducting_plate_id = subducting_plate.get_feature().get_reconstruction_plate_id()
+                # Find the overriding and subducting plates on either side of the shared sub-segment.
+                if USING_PYGPLATES_VERSION_GREATER_EQUAL_23:
+                    # PyGPlates version 23 has a method to get overriding and subducting plates.
+                    overriding_and_subducting_plates = shared_sub_segment.get_overriding_and_subducting_plates(return_subduction_polarity=True)
+                else:
+                    # Otherwise call the function defined above.
+                    overriding_and_subducting_plates = find_overriding_and_subducting_plates(shared_sub_segment)
+                if not overriding_and_subducting_plates:
+                    warnings.warn('Unable to find the overriding and subducting plates of the subducting sub-segment "{0}" at {1}Ma.\n'
+                                  '    Either the subduction polarity is not properly set or there are not exactly 2 topologies sharing the sub-segment.\n'
+                                  '    Ignoring current sub-segment.'.format(
+                                      shared_sub_segment.get_feature().get_name(), time),
+                                  RuntimeWarning)
+                    continue
+                overriding_plate, subducting_plate, subduction_polarity = overriding_and_subducting_plates
+                overriding_plate_id = overriding_plate.get_feature().get_reconstruction_plate_id()
+                subducting_plate_id = subducting_plate.get_feature().get_reconstruction_plate_id()
             
             # We need to reverse the trench normal direction if overriding plate is to
             # the right of the subducting line since great circle arc normal is always to the left.
