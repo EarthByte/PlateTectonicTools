@@ -46,6 +46,13 @@ python2 -m pip install PlateTectonicTools
 python3 -m pip install PlateTectonicTools
 ```
 
+To install the latest version from GitHub, use:
+
+```bash
+pip3 install --no-cache-dir --upgrade git+https://github.com/EarthByte/PlateTectonicTools
+pip install --no-cache-dir --upgrade git+https://github.com/EarthByte/PlateTectonicTools
+```
+
 ### Installing using Docker
 
 > Coming soon...
