@@ -114,7 +114,7 @@ def find_overriding_and_subducting_plates(subduction_shared_sub_segment):
 # Note: This is now a method in PyGPlates version 30 called pygplates.ResolvedTopologicalSharedSubSegment.get_subducting_plate().
 def find_subducting_plate(subduction_shared_sub_segment):
     
-    # Get the subduction polarity of the nearest subducting line.
+    # Get the subduction polarity of the subducting line.
     subduction_polarity = subduction_shared_sub_segment.get_feature().get_enumeration(pygplates.PropertyName.gpml_subduction_polarity)
     if (not subduction_polarity) or (subduction_polarity == 'Unknown'):
         return
@@ -1486,11 +1486,12 @@ if __name__ == '__main__':
         
         # Specify any optional output parameters to append for each sample point.
         kwargs = {}
-        for extra_output_parameter in args.extra_output_parameters:
-            if extra_output_parameter in _OUTPUT_PARAMETER_NAME_LIST:
-                kwargs[extra_output_parameter] = True
-            else:
-                raise ValueError('{0} is not a valid output parameter'.format(extra_output_parameter))
+        if args.extra_output_parameters:  # Default argument is None (not an empty list), so check first before iterating.
+            for extra_output_parameter in args.extra_output_parameters:
+                if extra_output_parameter in _OUTPUT_PARAMETER_NAME_LIST:
+                    kwargs[extra_output_parameter] = True
+                else:
+                    raise ValueError('{0} is not a valid output parameter'.format(extra_output_parameter))
         
         return_code = subduction_convergence_over_time(
                 args.output_filename_prefix,
