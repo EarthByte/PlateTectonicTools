@@ -225,8 +225,7 @@ def resolve_topologies_into_features(
             other_boundary_section_features)
 
 
-def find_total_length_in_kms(
-        resolved_topology_features,
+def find_total_boundary_length_in_kms(
         ridge_transform_boundary_section_features,
         ridge_boundary_section_features,
         transform_boundary_section_features,
@@ -235,7 +234,7 @@ def find_total_length_in_kms(
         right_subduction_boundary_section_features,
         other_boundary_section_features):
     """
-    Find the total length (in kms) of resolved topologies and their boundary sections (in the various categories).
+    Find the total length (in kms) of resolved topology boundary sections (in the various categories).
     """
 
     def find_total_length(features):
@@ -247,8 +246,7 @@ def find_total_length_in_kms(
         return  total_length_features * pygplates.Earth.mean_radius_in_kms
 
     # Return total lengths in kms (converted from radians).
-    return (find_total_length(resolved_topology_features),
-            find_total_length(ridge_transform_boundary_section_features),
+    return (find_total_length(ridge_transform_boundary_section_features),
             find_total_length(ridge_boundary_section_features),
             find_total_length(transform_boundary_section_features),
             find_total_length(subduction_boundary_section_features),
@@ -380,13 +378,13 @@ if __name__ == "__main__":
     
     parser.add_argument(
         '-nb', '--no_output_boundaries', action='store_true',
-        help='Do not write resolved topologies and their boundaries to files. '
+        help='Do not write geometries of resolved topologies and their boundaries to files. '
              'This is most useful when used with the "-l" option to generate only the text file containing boundary lengths. '
-             'By default files are written.')
+             'By default geometry files are written.')
     
     parser.add_argument(
         '-l', '--output_boundary_lengths', action='store_true',
-        help='Also generate a text file containing the total boundary lengths (in kms) of the resolved topologies and their boundary sections '
+        help='Also generate a text file containing the total boundary lengths (in kms) of the resolved topology boundary sections '
              'for the requested reconstruction times. By default no text file is generated.')
     
     parser.add_argument('output_filename_prefix', type=str, nargs='?',
@@ -437,7 +435,6 @@ if __name__ == "__main__":
         # Write the header line (showing what each column represents).
         boundary_lengths_file.write(
             '# time(Ma)'
-            ' resolved-plates-networks(km)'
             ' ridge-transform-boundary-sections(km)'
             ' ridge-boundary-sections(km)'
             ' transform-boundary-sections(km)'
@@ -481,15 +478,13 @@ if __name__ == "__main__":
         
         # Write the total boundary lengths to a text file (if requested).
         if args.output_boundary_lengths:
-            (total_length_kms_resolved_topology_features,
-             total_length_kms_ridge_transform_boundary_section_features,
+            (total_length_kms_ridge_transform_boundary_section_features,
              total_length_kms_ridge_boundary_section_features,
              total_length_kms_transform_boundary_section_features,
              total_length_kms_subduction_boundary_section_features,
              total_length_kms_left_subduction_boundary_section_features,
              total_length_kms_right_subduction_boundary_section_features,
-             total_length_kms_other_boundary_section_features) = find_total_length_in_kms(
-                    resolved_topology_features,
+             total_length_kms_other_boundary_section_features) = find_total_boundary_length_in_kms(
                     ridge_transform_boundary_section_features,
                     ridge_boundary_section_features,
                     transform_boundary_section_features,
@@ -499,9 +494,8 @@ if __name__ == "__main__":
                     other_boundary_section_features)
 
             boundary_lengths_file.write(
-                    '{0} {1} {2} {3} {4} {5} {6} {7} {8}\n'.format(
+                    '{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(
                         reconstruction_time,
-                        total_length_kms_resolved_topology_features,
                         total_length_kms_ridge_transform_boundary_section_features,
                         total_length_kms_ridge_boundary_section_features,
                         total_length_kms_transform_boundary_section_features,
