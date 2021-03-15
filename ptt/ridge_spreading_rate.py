@@ -100,9 +100,8 @@ def spreading_rates(
             spreading_feature.get_feature_type() not in spreading_feature_types):
             continue
         
-        # Find the stage rotation of the spreading feature in the frame of reference of its
-        # geometry at its birth time. The stage pole can then be directly geometrically compared
-        # to the reconstructed spreading geometry.
+        # Find the stage rotation of the spreading feature in the frame of reference of its reconstructed geometry at the current 'time'.
+        # The stage pole can then be directly geometrically compared to the reconstructed spreading geometry.
         spreading_stage_rotation = separate_ridge_transform_segments.get_stage_rotation_for_reconstructed_geometry(
                 spreading_feature, rotation_model, time)
         if not spreading_stage_rotation:
@@ -240,9 +239,8 @@ def spreading_rates_dense(
             spreading_feature.get_feature_type() not in spreading_feature_types):
             continue
         
-        # Find the stage rotation of the spreading feature in the frame of reference of its
-        # geometry at its birth time. The stage pole can then be directly geometrically compared
-        # to the reconstructed spreading geometry.
+        # Find the stage rotation of the spreading feature in the frame of reference of its reconstructed geometry at the current 'time'.
+        # The stage pole can then be directly geometrically compared to the reconstructed spreading geometry.
         spreading_stage_rotation = separate_ridge_transform_segments.get_stage_rotation_for_reconstructed_geometry(
                 spreading_feature, rotation_model, time)
         if not spreading_stage_rotation:
