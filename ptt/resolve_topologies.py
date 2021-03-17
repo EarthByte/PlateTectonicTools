@@ -43,7 +43,9 @@ def resolve_topologies(rotation_model, topological_features, reconstruction_time
     resolved_topologies = []
     shared_boundary_sections = []
     pygplates.resolve_topologies(
-            topological_features, rotation_model, resolved_topologies, reconstruction_time, shared_boundary_sections, anchor_plate_id)
+            topological_features, rotation_model, resolved_topologies, reconstruction_time, shared_boundary_sections, anchor_plate_id,
+            export_force_boundary_orientation=pygplates.PolygonOnSphere.Orientation.clockwise,
+            export_wrap_to_dateline=True)
 
     # We'll create a feature for each boundary polygon feature and each type of
     # resolved topological section feature we find.
