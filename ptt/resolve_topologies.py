@@ -127,6 +127,7 @@ def resolve_topologies_into_features(
             - right subduction boundary sections (resolved features)
             - other boundary sections (resolved features) that are not subduction zones or mid-ocean ridges (ridge/transform)
     """
+    time = float(time)
     
     # Turn rotation data into a RotationModel (if not already).
     rotation_model = pygplates.RotationModel(rotation_features_or_model)
@@ -138,9 +139,7 @@ def resolve_topologies_into_features(
     # We generate both the resolved topology boundaries and the boundary sections between them.
     resolved_topologies = []
     shared_boundary_sections = []
-    pygplates.resolve_topologies(topology_features.get_features(), rotation_model, resolved_topologies, time, shared_boundary_sections,
-        export_force_boundary_orientation=pygplates.PolygonOnSphere.Orientation.clockwise,
-        export_wrap_to_dateline=True)
+    pygplates.resolve_topologies(topology_features.get_features(), rotation_model, resolved_topologies, time, shared_boundary_sections)
 
     # We'll create a feature for each boundary polygon feature and each type of
     # resolved topological section feature we find.
@@ -240,7 +239,7 @@ def find_total_boundary_length_in_kms(
     """
 
     def find_total_length(features):
-        total_length_features = 0
+        total_length_features = 0.0
         for feature in features:
             for geometry in feature.get_geometries():
                 total_length_features += geometry.get_arc_length()
