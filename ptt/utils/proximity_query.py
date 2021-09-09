@@ -595,7 +595,7 @@ def _visit_closest_geometries_to_points(
             # Essentially remove any geometries whose distance compared to the closest geometry exceeds
             # the diameter of the current node's bounding circle.
             new_geometry_indices_to_visit = []
-            for index in xrange(0, len(distance_node_centre_to_geometries)):
+            for index in range(len(distance_node_centre_to_geometries)):
                 distance_node_centre_to_geometry, geometry_index = distance_node_centre_to_geometries[index]
                 if distance_node_centre_to_geometry - min_distance_node_centre_to_geometries > node_bounding_circle_diameter:
                     # All remaining geometries are essentially removed since the distance list is sorted.
