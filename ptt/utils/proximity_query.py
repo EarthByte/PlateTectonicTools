@@ -726,16 +726,16 @@ def _visit_closest_points_to_geometry(
             # Note: We just test distance to geometry centroid (point) rather than geometry itself
             # since it is faster and we don't need a lot of accuracy here - we just want a rough ordering.
             child_node_distances = []
-            for child_node in child_nodes:
+            for child_node_index, child_node in enumerate(child_nodes):
                 child_node_bounding_circle_centre, _ = child_node.get_bounding_circle()
                 distance_to_geometry_centroid = pygplates.GeometryOnSphere.distance(
                         child_node_bounding_circle_centre,
                         geometry_centroid)
-                child_node_distances.append((distance_to_geometry_centroid, child_node))
+                child_node_distances.append((distance_to_geometry_centroid, child_node_index))
             
             # Sort child nodes by distance.
             child_node_distances.sort()
-            child_nodes = [child_node for _, child_node in child_node_distances]
+            child_nodes = [child_nodes[child_node_index] for _, child_node_index in child_node_distances]
         
         for child_node in child_nodes:
             point_proxies_closest_to_geometry, distance_threshold_radians = _visit_closest_points_to_geometry(
