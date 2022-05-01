@@ -35,10 +35,10 @@ PYGPLATES_VERSION_REQUIRED = pygplates.Version(12)
 USING_PYGPLATES_VERSION_GREATER_EQUAL_22 = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(22))
 
 # PyGPlates version 23 has a method to get overriding and subducting plates.
-USING_PYGPLATES_VERSION_GREATER_EQUAL_23 = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(23))
+USING_PYGPLATES_VERSION_GREATER_EQUAL_23 = False
 
 # PyGPlates version 30 has a method to get only the subducting plate.
-USING_PYGPLATES_VERSION_GREATER_EQUAL_30 = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(30))
+USING_PYGPLATES_VERSION_GREATER_EQUAL_30 = False
 
 # The default threshold sampling distance along trenches (subduction zones).
 DEFAULT_THRESHOLD_SAMPLING_DISTANCE_DEGREES = 0.5
@@ -65,20 +65,41 @@ def find_overriding_and_subducting_plates(subduction_shared_sub_segment):
     if (not subduction_polarity) or (subduction_polarity == 'Unknown'):
         return
 
-    # There should be two sharing topologies - one is the overriding plate and the other the subducting plate.
+    # Ideally, there will be two sharing topologies - the overriding plate and the subducting plate.
+    # However, a topological boundary is allowed to overlap with one
+    # topological network. In this case, the plate ID of the network will be
+    # preferentially chosen over the plate ID of that of the boundary.
     sharing_resolved_topologies = subduction_shared_sub_segment.get_sharing_resolved_topologies()
-    if len(sharing_resolved_topologies) != 2:
-        return
+    geometry_reversal_flags = subduction_shared_sub_segment.get_sharing_resolved_topology_geometry_reversal_flags()
+    def key(t):
+        """Boundaries first, then networks - boundaries will be replaced by networks."""
+        if isinstance(t[0], pygplates.ResolvedTopologicalBoundary):
+            return 0
+        if isinstance(t[0], pygplates.ResolvedTopologicalNetwork):
+            return 1
+        return 2
+    zipped = list(zip(sharing_resolved_topologies, geometry_reversal_flags))
+    zipped.sort(key=key)
+    sharing_resolved_topologies, geometry_reversal_flags = zip(*zipped)
+    n_boundaries = 0
+    n_networks = 0
+    for i in sharing_resolved_topologies:
+        if isinstance(i, pygplates.ResolvedTopologicalBoundary):
+            n_boundaries += 1
+        elif isinstance(i, pygplates.ResolvedTopologicalNetwork):
+            n_networks += 1
+        else:
+            return None
+    if n_boundaries > 2 or n_networks > 2:
+        return None
 
     overriding_plate = None
     subducting_plate = None
-    
-    geometry_reversal_flags = subduction_shared_sub_segment.get_sharing_resolved_topology_geometry_reversal_flags()
-    for index in range(2):
 
-        sharing_resolved_topology = sharing_resolved_topologies[index]
-        geometry_reversal_flag = geometry_reversal_flags[index]
-
+    for sharing_resolved_topology, geometry_reversal_flag in zip(
+        sharing_resolved_topologies,
+        geometry_reversal_flags,
+    ):
         if sharing_resolved_topology.get_resolved_boundary().get_orientation() == pygplates.PolygonOnSphere.Orientation.clockwise:
             # The current topology sharing the subducting line has clockwise orientation (when viewed from above the Earth).
             # If the overriding plate is to the 'left' of the subducting line (when following its vertices in order) and
@@ -122,7 +143,8 @@ def find_subducting_plate(subduction_shared_sub_segment):
     subducting_plate = None
     
     # Iterate over the resolved topologies sharing the subduction sub-segment.
-    # We are looking for exactly one subducting plate.
+    # We are looking for exactly one subducting plate, or one boundary and
+    # one network.
     #
     # There can be zero, one or more overriding plates but that does not affect us (since only looking for subducting plate).
     # This actually makes things more robust because it's possible the topologies were built in such a way that a subduction line
@@ -137,6 +159,18 @@ def find_subducting_plate(subduction_shared_sub_segment):
     # subduction lines (the one attached to the subducting plate). However we will still have a problem if not exactly one subducting plate is found.
     sharing_resolved_topologies = subduction_shared_sub_segment.get_sharing_resolved_topologies()
     geometry_reversal_flags = subduction_shared_sub_segment.get_sharing_resolved_topology_geometry_reversal_flags()
+    def key(t):
+        """Boundaries first, then networks - boundaries will be replaced by networks."""
+        if isinstance(t[0], pygplates.ResolvedTopologicalBoundary):
+            return 0
+        if isinstance(t[0], pygplates.ResolvedTopologicalNetwork):
+            return 1
+        return 2
+    zipped = list(zip(sharing_resolved_topologies, geometry_reversal_flags))
+    zipped.sort(key=key)
+    sharing_resolved_topologies, geometry_reversal_flags = zip(*zipped)
+
+    n_subducting_plates = 0
     for index in range(len(sharing_resolved_topologies)):
 
         sharing_resolved_topology = sharing_resolved_topologies[index]
@@ -149,9 +183,7 @@ def find_subducting_plate(subduction_shared_sub_segment):
             # A similar test applies to the 'right' but with the subducting line reversed in the topology.
             if ((subduction_polarity == 'Left' and not geometry_reversal_flag) or
                 (subduction_polarity == 'Right' and geometry_reversal_flag)):
-                # If we've already previously found the subducting plate then it's ambiguous, so return None.
-                if subducting_plate is not None:
-                    return
+                n_subducting_plates += 1
                 subducting_plate = sharing_resolved_topology
         else:
             # The current topology sharing the subducting line has counter-clockwise orientation (when viewed from above the Earth).
@@ -160,13 +192,11 @@ def find_subducting_plate(subduction_shared_sub_segment):
             # A similar test applies to the 'right' but with the subducting line not reversed in the topology.
             if ((subduction_polarity == 'Left' and geometry_reversal_flag) or
                 (subduction_polarity == 'Right' and not geometry_reversal_flag)):
-                # If we've already previously found the subducting plate then it's ambiguous, so return None.
-                if subducting_plate is not None:
-                    return
+                n_subducting_plates += 1
                 subducting_plate = sharing_resolved_topology
     
     # Unable to find subducting plate, so return None.
-    if subducting_plate is None:
+    if subducting_plate is None or n_subducting_plates > 2:
         return
     
     return (subducting_plate, subduction_polarity)
