@@ -59,7 +59,7 @@ def find_subducting_plate(subduction_shared_sub_segment):
     # Get the subduction polarity of the subducting line.
     subduction_polarity = subduction_shared_sub_segment.get_feature().get_enumeration(pygplates.PropertyName.gpml_subduction_polarity)
     if (not subduction_polarity) or (subduction_polarity == 'Unknown'):
-        return
+        return None
 
     subducting_plate = None
     
@@ -92,6 +92,7 @@ def find_subducting_plate(subduction_shared_sub_segment):
     sharing_resolved_topologies, geometry_reversal_flags = zip(*zipped)
 
     n_subducting_plates = 0
+    subducting_topology_types = []
     for (
         sharing_resolved_topology,
         geometry_reversal_flag,
@@ -107,6 +108,7 @@ def find_subducting_plate(subduction_shared_sub_segment):
             if ((subduction_polarity == 'Left' and not geometry_reversal_flag) or
                 (subduction_polarity == 'Right' and geometry_reversal_flag)):
                 n_subducting_plates += 1
+                subducting_topology_types.append(type(sharing_resolved_topology))
                 # Make sure this topology actually has a plate ID
                 if sharing_resolved_topology.get_feature().get_reconstruction_plate_id() is None:
                     continue
@@ -119,14 +121,18 @@ def find_subducting_plate(subduction_shared_sub_segment):
             if ((subduction_polarity == 'Left' and geometry_reversal_flag) or
                 (subduction_polarity == 'Right' and not geometry_reversal_flag)):
                 n_subducting_plates += 1
+                subducting_topology_types.append(type(sharing_resolved_topology))
                 # Make sure this topology actually has a plate ID
                 if sharing_resolved_topology.get_feature().get_reconstruction_plate_id() is None:
                     continue
                 subducting_plate = sharing_resolved_topology
     
-    # Unable to find subducting plate, so return None.
     if subducting_plate is None or n_subducting_plates > 2:
-        return
+        # Unable to find subducting plate, so return None.
+        return None
+    if len(subducting_topology_types) != len(set(subducting_topology_types)):
+        # More than one rigid plate or more than one deforming network
+        return None
     
     return (subducting_plate, subduction_polarity)
 
