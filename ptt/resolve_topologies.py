@@ -38,7 +38,8 @@ def resolve_topologies(
         time,
         output_filename_prefix,
         output_filename_extension,
-        transform_segment_deviation_in_radians = separate_ridge_transform_segments.DEFAULT_TRANSFORM_SEGMENT_DEVIATION_RADIANS):
+        transform_segment_deviation_in_radians = separate_ridge_transform_segments.DEFAULT_TRANSFORM_SEGMENT_DEVIATION_RADIANS,
+        anchor_plate_id = 0):
     """
     Resolves topologies at specified time and saves (to separate files) the resolved topologies, and their boundary sections as subduction zones,
     mid-ocean ridges (ridge/transform) and others (not subduction zones or mid-ocean ridges).
@@ -51,6 +52,8 @@ def resolve_topologies(
     
     transform_segment_deviation_in_radians: How much a mid-ocean ridge segment can deviate from the stage pole before
                                             it's considered a transform segment (in radians).
+
+    anchor_plate_id: Anchor plate ID (int).
     
     Writes output files containing the following features...
             - resolved topology features (topological plates and networks)
@@ -62,9 +65,17 @@ def resolve_topologies(
             - right subduction boundary sections (resolved features)
             - other boundary sections (resolved features) that are not subduction zones or mid-ocean ridges (ridge/transform)
     """
-    
     # Turn rotation data into a RotationModel (if not already).
-    rotation_model = pygplates.RotationModel(rotation_features_or_model)
+    if USING_PYGPLATES_VERSION_GREATER_EQUAL_26:
+        rotation_model = pygplates.RotationModel(
+            rotation_features_or_model,
+            default_anchor_plate_id=anchor_plate_id,
+        )
+    elif anchor_plate_id != 0:
+        raise RuntimeError('Using pygplates version {0} but version 26 or greater is required for non-zero anchor plate IDs'.format(
+            pygplates.Version.get_imported_version()))
+    else:
+        rotation_model = pygplates.RotationModel(rotation_features_or_model)
 
     # Get topology features (could include filenames).    
     topology_features = pygplates.FeaturesFunctionArgument(topology_features).get_features()
@@ -82,7 +93,8 @@ def resolve_topologies(
             rotation_model,
             topology_features,
             time,
-            transform_segment_deviation_in_radians)
+            transform_segment_deviation_in_radians,
+            anchor_plate_id=anchor_plate_id)
     
     # Write each list of features to a separate file.
     _write_resolved_topologies(
@@ -103,7 +115,8 @@ def resolve_topologies_into_features(
         rotation_features_or_model,
         topology_features,
         time,
-        transform_segment_deviation_in_radians = separate_ridge_transform_segments.DEFAULT_TRANSFORM_SEGMENT_DEVIATION_RADIANS):
+        transform_segment_deviation_in_radians = separate_ridge_transform_segments.DEFAULT_TRANSFORM_SEGMENT_DEVIATION_RADIANS,
+        anchor_plate_id = 0):
     """
     Resolves topologies at specified time and returns resolved topologies and their boundary sections as subduction zones,
     mid-ocean ridges (ridge/transform) and others (not subduction zones or mid-ocean ridges).
@@ -116,6 +129,8 @@ def resolve_topologies_into_features(
     
     transform_segment_deviation_in_radians: How much a mid-ocean ridge segment can deviate from the stage pole before
                                             it's considered a transform segment (in radians).
+
+    anchor_plate_id: Anchor plate ID (int).
     
     Returns: A tuple containing the following lists...
             - resolved topology features (topological plates and networks)
@@ -127,11 +142,19 @@ def resolve_topologies_into_features(
             - right subduction boundary sections (resolved features)
             - other boundary sections (resolved features) that are not subduction zones or mid-ocean ridges (ridge/transform)
     """
-    time = float(time)
-    
     # Turn rotation data into a RotationModel (if not already).
-    rotation_model = pygplates.RotationModel(rotation_features_or_model)
-    
+    if USING_PYGPLATES_VERSION_GREATER_EQUAL_26:
+        rotation_model = pygplates.RotationModel(
+            rotation_features_or_model,
+            default_anchor_plate_id=anchor_plate_id,
+        )
+    elif anchor_plate_id != 0:
+        raise RuntimeError('Using pygplates version {0} but version 26 or greater is required for non-zero anchor plate IDs'.format(
+            pygplates.Version.get_imported_version()))
+    else:
+        rotation_model = pygplates.RotationModel(rotation_features_or_model)
+    time = float(time)
+
     # Turn topology data into a list of features (if not already).
     topology_features = pygplates.FeaturesFunctionArgument(topology_features)
     
@@ -139,7 +162,14 @@ def resolve_topologies_into_features(
     # We generate both the resolved topology boundaries and the boundary sections between them.
     resolved_topologies = []
     shared_boundary_sections = []
-    pygplates.resolve_topologies(topology_features.get_features(), rotation_model, resolved_topologies, time, shared_boundary_sections)
+    pygplates.resolve_topologies(
+        topology_features.get_features(),
+        rotation_model,
+        resolved_topologies,
+        time,
+        shared_boundary_sections,
+        anchor_plate_id=anchor_plate_id,
+    )
 
     # We'll create a feature for each boundary polygon feature and each type of
     # resolved topological section feature we find.
