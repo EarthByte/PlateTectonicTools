@@ -29,6 +29,7 @@ import warnings
 
 
 # Required pygplates version.
+# PyGPlates 0.28 is a public release from 2020 (so everyone should be using that by now).
 PYGPLATES_VERSION_REQUIRED = pygplates.Version(0, 28)
 PYGPLATES_VERSION = pygplates.Version.get_imported_version()
 if PYGPLATES_VERSION < PYGPLATES_VERSION_REQUIRED:
@@ -299,6 +300,14 @@ def subduction_convergence(
         # These are the parts of the subducting line that actually contribute to topological boundaries.
         for shared_sub_segment in shared_boundary_section.get_shared_sub_segments():
             # Find the subducting plate of the shared sub-segment.
+            #
+            # Note that prior to pyGPlates 0.22 we also looked for the overriding plate since it couldn't extract the individual trench plate IDs
+            # from a "resolved topological line" trench (now we use the trench plate IDs since our minimum requirement is version 0.28).
+            # Not having to find the overriding plate means we actually get a more accurate total subduction zone length in this script.
+            # This is because we are not forced to ignore trench sections where there's not exactly one overriding plate
+            # (and optionally a deforming network overlapping it). And also we're not counting duplicate subduction lines
+            # (where one duplicate is attached only to the overriding plate and the other attached only to the subducting plate)
+            # because we only count the subduction line attached to the subducting plate.
             subducting_plate_and_polarity = find_subducting_plate(shared_sub_segment)
             if not subducting_plate_and_polarity:
                 warnings.warn(
