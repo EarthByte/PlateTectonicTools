@@ -30,7 +30,8 @@ import warnings
 
 # Required pygplates version.
 # PyGPlates 0.28 is a public release from 2020 (so everyone should be using that by now).
-PYGPLATES_VERSION_REQUIRED = pygplates.Version(0, 28)
+# Note: Specifying 'Version(28)' instead of 'Version(0, 28)' since the latter only works for version >= 0.34.
+PYGPLATES_VERSION_REQUIRED = pygplates.Version(28)
 PYGPLATES_VERSION = pygplates.Version.get_imported_version()
 if PYGPLATES_VERSION < PYGPLATES_VERSION_REQUIRED:
     raise RuntimeError(
