@@ -193,7 +193,8 @@ def spreading_rates_dense(
     - spreading obliquity in degrees
     - length of arc segment (in degrees) that current point is on
     - azimuth of vector normal to the arc segment in degrees
-    
+    - left plate ID
+    - right plate ID
     
     rotation_features_or_model: Rotation model or feature collection(s), or list of features, or filename(s).
     
@@ -246,6 +247,9 @@ def spreading_rates_dense(
         if not spreading_stage_rotation:
             # Skip current feature - it's not a spreading feature.
             continue
+
+        pID_left = spreading_feature.get_left_plate()
+        pID_right = spreading_feature.get_right_plate()
         
         # Iterate over the shared sub-segments of the current line.
         # These are the parts of the line that actually contribute to topological boundaries.
@@ -333,6 +337,8 @@ def spreading_rates_dense(
                         spreading_velocity_magnitude,
                         spreading_obliquity_degrees,
                         math.degrees(arc_length),
-                        math.degrees(spreading_arc_normal_azimuth)))
+                        math.degrees(spreading_arc_normal_azimuth),
+                        pID_left,
+                        pID_right))
     
     return output_data
