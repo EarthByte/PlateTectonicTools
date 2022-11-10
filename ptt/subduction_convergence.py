@@ -56,7 +56,10 @@ DEFAULT_VELOCITY_DELTA_TIME = 1
 # Determine the subducting plate of the subduction shared sub-segment.
 #
 # Note: There is now a similar method in PyGPlates version 30 called pygplates.ResolvedTopologicalSharedSubSegment.get_subducting_plate().
-def find_subducting_plate(subduction_shared_sub_segment):
+def find_subducting_plate(
+    subduction_shared_sub_segment,
+    include_slab_topologies=False,
+):
     """Determine the subducting plate of the subduction shared sub-segment."""
     # Get the subduction polarity of the subducting line.
     subduction_polarity = subduction_shared_sub_segment.get_feature().get_enumeration(pygplates.PropertyName.gpml_subduction_polarity)
@@ -102,6 +105,16 @@ def find_subducting_plate(subduction_shared_sub_segment):
         sharing_resolved_topologies,
         geometry_reversal_flags
     ):
+        if (
+            include_slab_topologies and (
+                sharing_resolved_topology.get_feature(
+                ).get_feature_type(
+                ).to_qualified_string(
+                ) == "gpml:TopologicalSlabBoundary"
+            )
+        ):
+            # Ignore slab topologies (e.g. flat slabs)
+            continue
         if sharing_resolved_topology.get_resolved_boundary().get_orientation() == pygplates.PolygonOnSphere.Orientation.clockwise:
             # The current topology sharing the subducting line has clockwise orientation (when viewed from above the Earth).
             # If the overriding plate (subduction polarity) is to the 'left' of the subducting line (when following its vertices in order)
@@ -144,8 +157,9 @@ def subduction_convergence(
         topology_features,
         threshold_sampling_distance_radians,
         time,
-        velocity_delta_time = 1.0,
-        anchor_plate_id = 0,
+        velocity_delta_time=1.0,
+        anchor_plate_id=0,
+        include_slab_topologies=False,
         **kwargs):
     # Docstring in numpydoc format...
     """Find the convergence and absolute velocities sampled along trenches (subduction zones) at a particular geological time.
@@ -192,6 +206,8 @@ def subduction_convergence(
         The delta time interval used for velocity calculations. Defaults to 1My.
     anchor_plate_id: int, optional
         The anchor plate of the rotation model. Defaults to zero.
+    include_slab_topologies : bool, default False
+        Include slab topologies (`gpml:TopologicalSlabBoundary`) in analysis.
     
     Returns
     -------
@@ -268,13 +284,22 @@ def subduction_convergence(
     rotation_model = pygplates.RotationModel(rotation_features_or_model)
     
     # Turn topology data into a list of features (if not already).
-    topology_features = pygplates.FeaturesFunctionArgument(topology_features)
+    topology_features = pygplates.FeaturesFunctionArgument(
+        topology_features
+    ).get_features()
+    if not include_slab_topologies:
+        # Ignore slab topologies (usually flat slabs)
+        topology_features = [
+            i for i in topology_features
+            if i.get_feature_type().to_qualified_string()
+            != "gpml:TopologicalSlabBoundary"
+        ]
     
     # Resolve our topological plate polygons (and deforming networks) to the current 'time'.
     # We generate both the resolved topology boundaries and the boundary sections between them.
     resolved_topologies = []
     shared_boundary_sections = []
-    pygplates.resolve_topologies(topology_features.get_features(), rotation_model, resolved_topologies, time, shared_boundary_sections, anchor_plate_id)
+    pygplates.resolve_topologies(topology_features, rotation_model, resolved_topologies, time, shared_boundary_sections, anchor_plate_id)
     
     # List of tesselated subduction zone (trench) shared subsegment points and associated convergence parameters
     # for the current 'time'.
@@ -309,7 +334,10 @@ def subduction_convergence(
             # (and optionally a deforming network overlapping it). And also we're not counting duplicate subduction lines
             # (where one duplicate is attached only to the overriding plate and the other attached only to the subducting plate)
             # because we only count the subduction line attached to the subducting plate.
-            subducting_plate_and_polarity = find_subducting_plate(shared_sub_segment)
+            subducting_plate_and_polarity = find_subducting_plate(
+                shared_sub_segment,
+                include_slab_topologies=include_slab_topologies,
+            )
             if not subducting_plate_and_polarity:
                 warnings.warn(
                     'Unable to find the subducting plate of the subducting sub-segment "{0}" at {1}Ma.\n'
@@ -884,6 +912,7 @@ def subduction_convergence_over_time(
         velocity_delta_time = 1.0,
         anchor_plate_id = 0,
         output_gpml_filename = None,
+        include_slab_topologies=False,
         **kwargs):
     if time_increment <= 0:
         raise ValueError('The time increment "{0}" is not positive and non-zero.'.format(time_increment))
@@ -915,6 +944,7 @@ def subduction_convergence_over_time(
                 time,
                 velocity_delta_time,
                 anchor_plate_id,
+                include_slab_topologies=include_slab_topologies,
                 **kwargs)
         
         if output_data:
