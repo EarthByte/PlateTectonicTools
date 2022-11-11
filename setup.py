@@ -15,14 +15,16 @@
 
 from setuptools import setup
 from os import path
-import io
 
 ## in development set version to none and ...
-PYPI_VERSION = "0.4"
+PYPI_VERSION = "0.4.1"
 
 # Return the git revision as a string (from numpy)
 def git_version():
     def _minimal_ext_cmd(cmd):
+        import os
+        import subprocess
+
         # construct minimal environment
         env = {}
         for k in ['SYSTEMROOT', 'PATH']:
