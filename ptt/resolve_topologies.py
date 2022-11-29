@@ -26,6 +26,8 @@ import pygplates
 
 # PyGPlates version 26 supports default anchor plate ID in pygplates.RotationModel.__init__().
 USING_PYGPLATES_VERSION_GREATER_EQUAL_26 = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(26))
+# PyGPlates version 29 supports passing a RotationModel to RotationModel.__init__
+USING_PYGPLATES_VERSION_GREATER_EQUAL_29 = (hasattr(pygplates, 'Version') and pygplates.Version.get_imported_version() >= pygplates.Version(29))
 
 
 DEFAULT_OUTPUT_FILENAME_PREFIX = 'topology_'
@@ -39,7 +41,7 @@ def resolve_topologies(
         output_filename_prefix,
         output_filename_extension,
         transform_segment_deviation_in_radians = separate_ridge_transform_segments.DEFAULT_TRANSFORM_SEGMENT_DEVIATION_RADIANS,
-        anchor_plate_id = 0):
+        anchor_plate_id=None):
     """
     Resolves topologies at specified time and saves (to separate files) the resolved topologies, and their boundary sections as subduction zones,
     mid-ocean ridges (ridge/transform) and others (not subduction zones or mid-ocean ridges).
@@ -53,7 +55,7 @@ def resolve_topologies(
     transform_segment_deviation_in_radians: How much a mid-ocean ridge segment can deviate from the stage pole before
                                             it's considered a transform segment (in radians).
 
-    anchor_plate_id: Anchor plate ID (int).
+    anchor_plate_id: Anchor plate ID (optional, int).
     
     Writes output files containing the following features...
             - resolved topology features (topological plates and networks)
@@ -66,16 +68,10 @@ def resolve_topologies(
             - other boundary sections (resolved features) that are not subduction zones or mid-ocean ridges (ridge/transform)
     """
     # Turn rotation data into a RotationModel (if not already).
-    if USING_PYGPLATES_VERSION_GREATER_EQUAL_26:
-        rotation_model = pygplates.RotationModel(
-            rotation_features_or_model,
-            default_anchor_plate_id=anchor_plate_id,
-        )
-    elif anchor_plate_id != 0:
-        raise RuntimeError('Using pygplates version {0} but version 26 or greater is required for non-zero anchor plate IDs'.format(
-            pygplates.Version.get_imported_version()))
-    else:
-        rotation_model = pygplates.RotationModel(rotation_features_or_model)
+    rotation_model = _parse_rotation_args(
+        rotation_features_or_model,
+        anchor_plate_id=anchor_plate_id,
+    )
 
     # Get topology features (could include filenames).    
     topology_features = pygplates.FeaturesFunctionArgument(topology_features).get_features()
@@ -116,7 +112,7 @@ def resolve_topologies_into_features(
         topology_features,
         time,
         transform_segment_deviation_in_radians = separate_ridge_transform_segments.DEFAULT_TRANSFORM_SEGMENT_DEVIATION_RADIANS,
-        anchor_plate_id = 0):
+        anchor_plate_id=None):
     """
     Resolves topologies at specified time and returns resolved topologies and their boundary sections as subduction zones,
     mid-ocean ridges (ridge/transform) and others (not subduction zones or mid-ocean ridges).
@@ -130,7 +126,7 @@ def resolve_topologies_into_features(
     transform_segment_deviation_in_radians: How much a mid-ocean ridge segment can deviate from the stage pole before
                                             it's considered a transform segment (in radians).
 
-    anchor_plate_id: Anchor plate ID (int).
+    anchor_plate_id: Anchor plate ID (optional, int).
     
     Returns: A tuple containing the following lists...
             - resolved topology features (topological plates and networks)
@@ -143,16 +139,10 @@ def resolve_topologies_into_features(
             - other boundary sections (resolved features) that are not subduction zones or mid-ocean ridges (ridge/transform)
     """
     # Turn rotation data into a RotationModel (if not already).
-    if USING_PYGPLATES_VERSION_GREATER_EQUAL_26:
-        rotation_model = pygplates.RotationModel(
-            rotation_features_or_model,
-            default_anchor_plate_id=anchor_plate_id,
-        )
-    elif anchor_plate_id != 0:
-        raise RuntimeError('Using pygplates version {0} but version 26 or greater is required for non-zero anchor plate IDs'.format(
-            pygplates.Version.get_imported_version()))
-    else:
-        rotation_model = pygplates.RotationModel(rotation_features_or_model)
+    rotation_model = _parse_rotation_args(
+        rotation_features_or_model,
+        anchor_plate_id=anchor_plate_id,
+    )
     time = float(time)
 
     # Turn topology data into a list of features (if not already).
@@ -356,6 +346,48 @@ def _write_resolved_topologies(
         other_boundary_section_feature_collection.write(other_boundary_section_features_filename)
 
 
+def _parse_rotation_args(rotation_features_or_model, anchor_plate_id=None):
+    if isinstance(rotation_features_or_model, pygplates.RotationModel):
+        if anchor_plate_id is None:
+            # Keep the original anchor plate
+            return rotation_features_or_model
+        if not USING_PYGPLATES_VERSION_GREATER_EQUAL_29:
+            # Cannot change anchor plate
+            raise RuntimeError(
+                "Using pygplates version {} ".format(
+                    pygplates.Version.get_imported_version()
+                )
+                + "but version 0.29 or greater is required "
+                + "to specify a new anchor plate ID"
+            )
+        # Return RotationModel with new anchor plate
+        return pygplates.RotationModel(
+            rotation_features_or_model,
+            default_anchor_plate_id=anchor_plate_id,
+        )
+
+    # Input is not a RotationModel
+    if anchor_plate_id is not None:
+        if anchor_plate_id == 0:
+            # Zero is the default for RotationModel, which means it works
+            # even in versions older than 0.26
+            return pygplates.RotationModel(rotation_features_or_model)
+        if not USING_PYGPLATES_VERSION_GREATER_EQUAL_26:
+            raise RuntimeError(
+                "Using pygplates version {} ".format(
+                    pygplates.Version.get_imported_version()
+                )
+                + "but version 0.26 or greater is required "
+                + "to specify a default anchor plate ID"
+            )
+        return pygplates.RotationModel(
+            rotation_features_or_model,
+            default_anchor_plate_id=anchor_plate_id,
+        )
+    # Use default anchor plate ID
+    return pygplates.RotationModel(rotation_features_or_model)
+
+
 if __name__ == "__main__":
 
     # Check the imported pygplates version.
@@ -441,7 +473,7 @@ if __name__ == "__main__":
     #       If 'anchor_plate_id == 0' then any pyGPlates revision will work.
     if args.anchor_plate_id != 0:
         if not USING_PYGPLATES_VERSION_GREATER_EQUAL_26:
-            raise RuntimeError('Using pygplates version {0} but version 26 or greater is required for non-zero anchor plate IDs'.format(
+            raise RuntimeError('Using pygplates version {0} but version 0.26 or greater is required for non-zero anchor plate IDs'.format(
                     pygplates.Version.get_imported_version()))
         rotation_model = pygplates.RotationModel(args.rotation_filenames, default_anchor_plate_id=args.anchor_plate_id)
     else:
