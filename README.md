@@ -35,6 +35,7 @@ The following Python packages are required:
 __Optional dependencies__ for running the Notebooks:
 
 - [`matplotlib`](https://matplotlib.org/)
+- [`cartopy`](https://scitools.org.uk/cartopy/docs/latest/)
 
 ### Installing using pip
 
