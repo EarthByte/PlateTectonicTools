@@ -7,3 +7,4 @@ from . import remove_plate_rotations
 from . import separate_ridge_transform_segments
 from . import resolve_topologies
 from . import velocity_tools
+from . import continent_contours

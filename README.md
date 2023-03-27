@@ -61,4 +61,24 @@ pip install --no-cache-dir --upgrade git+https://github.com/EarthByte/PlateTecto
 
 ### API Documentation
 
-> Coming soon...
+#### continent_contours.py
+
+The current contouring algorithm implements a landmass flood-fill to find all contours for a particular continuous landmass followed by the Marching Squares algorithm to create the contours for that landmass. This is done on the 3D globe and solves the following problems:
+
+*	A single very large landmass can have more than one contour (polygon).
+*	In some cases (particularly for 0-130Ma) the polygons are so large that the inside/outside region of each contour polygon becomes swapped.
+*	Clipping at the dateline (with a 2D approach) causes perimeters to be larger than they should be.
+
+Essentially you can create a `ContinentContouring` object using rotation files, the continent features (polygons), a contour resolution, a gap threshold, an area threshold and an age range. And then ask it to reconstruct the polygons to an `age` and contour them into continents:
+
+```
+continent_contouring = ContinentContouring(...)
+...
+contoured_continents = continent_contouring.get_contoured_continents(age)
+```
+
+Where the returned `contoured_continents` is a list of `ContouredContinent`. These are all the contoured continents on the globe at the specified age. Each of these can be used to query a continent perimeter, area and whether arbitrary points are contained inside it. If you want to query distance to the continent you can first retrieve its polygons and then query distance to those (each contoured continent is actually one or more pyGPlates polygons representing its boundary between land and ocean, eg, an exterior polygon with interior holes).
+
+*A note on the input parameters mentioned above*... The contour resolution determines how finely tessellated the contour outlines are. The gap threshold controls how close the reconstructed polygons can be to each other to be joined together – this helps remove narrow channels/gaps, however it also has the effect of expanding the continent outwards. The area threshold excludes any polygon boundary (of a contoured continent) with area below the threshold - remember that a contoured continent can contain more than one boundary - so for example if a hole inside a continent has an area below the threshold then the hole disappears.
+
+> Documentation for other modules is coming soon...
