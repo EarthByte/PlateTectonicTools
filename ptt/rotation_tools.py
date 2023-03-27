@@ -246,7 +246,7 @@ if __name__ == '__main__':
         parser.add_argument('-p', '--plate_pairs', nargs='+', action=PlatePairsAction,
                 metavar='moving_plate_id fixed_plate_id',
                 help='One or more moving/fixed plate pairs to limit operation to. '
-                     'If not specifiedd then defaults to all plate pairs.')
+                     'If not specified then defaults to all plate pairs.')
         
         parser.add_argument('-o', '--output_filename_prefix', type=str,
                 metavar='output_filename_prefix',

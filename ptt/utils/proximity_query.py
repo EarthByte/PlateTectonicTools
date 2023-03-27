@@ -836,12 +836,12 @@ def _visit_closest_points_to_geometry(
 #    lon_grid_spacing_degrees = 360.0 / num_longitudes
 #    
 #    points = []
-#    for lat_index in xrange(num_latitudes):
+#    for lat_index in range(num_latitudes):
 #        # The 0.5 puts the point in the centre of the grid pixel.
 #        # This also avoids sampling right on the poles.
 #        lat = -90 + (lat_index + 0.5) * lat_grid_spacing_degrees
 #        
-#        for lon_index in xrange(num_longitudes):
+#        for lon_index in range(num_longitudes):
 #            # The 0.5 puts the point in the centre of the grid pixel.
 #            # This also avoids sampling right on the dateline where there might be
 #            # age grid or static polygon artifacts.
@@ -871,7 +871,7 @@ def _visit_closest_points_to_geometry(
 #        #
 #        # Similar to 'find_closest_geometries_to_points()' except without using a quad tree.
 #        #
-#        geometries_and_features = [(geometries[index], geometry_features[index]) for index in xrange(len(geometries))]
+#        geometries_and_features = [(geometries[index], geometry_features[index]) for index in range(len(geometries))]
 #        geometry_features_closest_to_points = [None] * len(points)
 #        for point_index, point in enumerate(points):
 #            geometry_features_closest_to_points[point_index] = []
