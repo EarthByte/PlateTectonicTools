@@ -12,17 +12,17 @@ source:
 build:
   number: 0
   script: "{{ PYTHON }} -m pip install . -vv"
+  noarch: python
 
 requirements:
   host:
-    - numpy
     - pip
-    - python
-    - scipy
-    - cartopy
+    - python >=3.5
   run:
+    - setuptools
     - numpy
-    - python
+    - python >=3.5
+    - pygplates
     - scipy
     - cartopy
 
@@ -33,13 +33,11 @@ test:
 
 about:
   home: "https://github.com/EarthByte/PlateTectonicTools"
-  license: UNKNOWN
-  license_family: OTHER
-  license_file: 
+  license: GPL-2.0-or-later
+  license_family: GPL
+  license_file: LICENSE
   summary: "Python tools for plate tectonic research"
-  doc_url: 
-  dev_url: 
 
 extra:
   recipe-maintainers:
-    - your-github-id-here
+    - jcannon-gplates
