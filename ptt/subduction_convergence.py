@@ -277,6 +277,11 @@ def subduction_convergence(
     |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
     |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
     +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_trench_normal                           | bool  | False   | Append the x, y and z components of the trench normal unit-length 3D vectors.   |
+    |                                                |       |         | These vectors are normal to the trench in the direction of subduction           |
+    |                                                |       |         | (towards overriding plate). These are global 3D vectors which differ from       |
+    |                                                |       |         | trench normal azimuth angles (ie, angles relative to North).                    |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
     """
     time = float(time)
 
@@ -455,6 +460,7 @@ def _sub_segment_subduction_convergence(
     output_trench_absolute_velocity_components = kwargs.get('output_trench_absolute_velocity_components', False)
     output_subducting_absolute_velocity = kwargs.get('output_subducting_absolute_velocity', False)
     output_subducting_absolute_velocity_components = kwargs.get('output_subducting_absolute_velocity_components', False)
+    output_trench_normal = kwargs.get('output_trench_normal', False)
     
     # Get the rotation of the subducting plate relative to the trench line
     # from 'time + velocity_delta_time' to 'time'.
@@ -745,6 +751,9 @@ def _sub_segment_subduction_convergence(
                         math.sin(math.radians(subducting_absolute_obliquity_degrees)) * math.fabs(subducting_absolute_velocity_magnitude))
                     output_tuple += (subducting_absolute_velocity_orthogonal, subducting_absolute_velocity_parallel)
         
+        if output_trench_normal:
+            output_tuple += trench_normal.to_xyz()
+        
         output_data.append(output_tuple)
 
 
@@ -809,6 +818,11 @@ def create_coverage_feature_from_convergence_data(
     |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
     |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
     +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_trench_normal                           | bool  | False   | Append the x, y and z components of the trench normal unit-length 3D vectors.   |
+    |                                                |       |         | These vectors are normal to the trench in the direction of subduction           |
+    |                                                |       |         | (towards overriding plate). These are global 3D vectors which differ from       |
+    |                                                |       |         | trench normal azimuth angles (ie, angles relative to North).                    |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
     """
     
     #
@@ -820,6 +834,7 @@ def create_coverage_feature_from_convergence_data(
     output_trench_absolute_velocity_components = kwargs.get('output_trench_absolute_velocity_components', False)
     output_subducting_absolute_velocity = kwargs.get('output_subducting_absolute_velocity', False)
     output_subducting_absolute_velocity_components = kwargs.get('output_subducting_absolute_velocity_components', False)
+    output_trench_normal = kwargs.get('output_trench_normal', False)
     
     # Convert the list of tuples (one tuple per sample point) into a tuple of lists (one list per data parameter).
     parameter_lists = list(zip(*subduction_convergence_data))
@@ -893,6 +908,16 @@ def create_coverage_feature_from_convergence_data(
         optional_parameter_index += 1
         all_subducting_absolute_velocity_parallel = parameter_lists[optional_parameter_index]
         coverage_scalars[pygplates.ScalarType.create_gpml('SubductingAbsoluteVelocityParallel')] = all_subducting_absolute_velocity_parallel
+        optional_parameter_index += 1
+    if output_trench_normal:
+        all_trench_normal_x = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('TrenchNormalX')] = all_trench_normal_x
+        optional_parameter_index += 1
+        all_trench_normal_y = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('TrenchNormalY')] = all_trench_normal_y
+        optional_parameter_index += 1
+        all_trench_normal_z = parameter_lists[optional_parameter_index]
+        coverage_scalars[pygplates.ScalarType.create_gpml('TrenchNormalZ')] = all_trench_normal_z
         optional_parameter_index += 1
     
     coverage_feature.set_geometry((coverage_geometry, coverage_scalars))
@@ -1016,6 +1041,11 @@ def convert_old_convergence_output(
     |                                                |       |         | Orthogonal is normal to trench in direction of overriding plate.                |
     |                                                |       |         | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
     +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
+    | output_trench_normal                           | bool  | False   | Append the x, y and z components of the trench normal unit-length 3D vectors.   |
+    |                                                |       |         | These vectors are normal to the trench in the direction of subduction           |
+    |                                                |       |         | (towards overriding plate). These are global 3D vectors which differ from       |
+    |                                                |       |         | trench normal azimuth angles (ie, angles relative to North).                    |
+    +------------------------------------------------+-------+---------+---------------------------------------------------------------------------------+
     """
     
     #
@@ -1027,6 +1057,7 @@ def convert_old_convergence_output(
     output_trench_absolute_velocity_components = kwargs.get('output_trench_absolute_velocity_components', False)
     output_subducting_absolute_velocity = kwargs.get('output_subducting_absolute_velocity', False)
     output_subducting_absolute_velocity_components = kwargs.get('output_subducting_absolute_velocity_components', False)
+    output_trench_normal = kwargs.get('output_trench_normal', False)
     
     new_convergence_data = []
     for old_convergence_data_sample in old_convergence_data:
@@ -1218,6 +1249,13 @@ def convert_old_convergence_output(
                 
                 new_convergence_data_sample += (new_subducting_absolute_velocity_orthogonal, new_subducting_absolute_velocity_parallel)
         
+        if output_trench_normal:
+            # Convert trench normal from local (magnitude, azimuth, inclination) to a global 3D vector.
+            local_cartesian = pygplates.LocalCartesian((new_latitude, new_longitude))
+            trench_normal = local_cartesian.from_magnitude_azimuth_inclination_to_geocentric(
+                    (1.0, math.radians(new_subducting_arc_normal_azimuth_degrees), 0.0))
+            new_convergence_data_sample += trench_normal.to_xyz()
+        
         new_convergence_data.append(new_convergence_data_sample)
     
     return new_convergence_data
@@ -1232,7 +1270,8 @@ _OUTPUT_PARAMETER_NAME_LIST = [
     'output_convergence_velocity_components',
     'output_trench_absolute_velocity_components',
     'output_subducting_absolute_velocity',
-    'output_subducting_absolute_velocity_components']
+    'output_subducting_absolute_velocity_components',
+    'output_trench_normal']
 
 
 if __name__ == '__main__':
@@ -1304,6 +1343,11 @@ if __name__ == '__main__':
         |                                                | components (in cm/yr) to each returned sample point.                            |
         |                                                | Orthogonal is normal to trench in direction of overriding plate.                |
         |                                                | Parallel is along trench and 90 degrees clockwise from orthogonal.              |
+        +------------------------------------------------+---------------------------------------------------------------------------------+
+        | output_trench_normal                           | Append the x, y and z components of the trench normal unit-length 3D vectors.   |
+        |                                                | These vectors are normal to the trench in the direction of subduction           |
+        |                                                | (towards overriding plate). These are global 3D vectors which differ from       |
+        |                                                | trench normal azimuth angles (ie, angles relative to North).                    |
         +------------------------------------------------+---------------------------------------------------------------------------------+
     
     The obliquity angles are in the range (-180 180). The range (0, 180) goes clockwise (when viewed from above the Earth) from the

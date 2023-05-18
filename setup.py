@@ -17,7 +17,7 @@ from setuptools import setup
 from os import path
 
 ## in development set version to none and ...
-PYPI_VERSION = "0.4.1"
+PYPI_VERSION = None  # "0.4.1"
 
 # Return the git revision as a string (from numpy)
 def git_version():

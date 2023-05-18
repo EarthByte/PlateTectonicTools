@@ -72,6 +72,8 @@ The current contouring algorithm implements a landmass flood-fill to find all co
 Essentially you can create a `ContinentContouring` object using rotation files, the continent features (polygons), a contour resolution, a gap threshold, an area threshold and an age range. And then ask it to reconstruct the polygons to an `age` and contour them into continents:
 
 ```
+from ptt.continent_contours import ContinentContouring
+
 continent_contouring = ContinentContouring(...)
 ...
 contoured_continents = continent_contouring.get_contoured_continents(age)
