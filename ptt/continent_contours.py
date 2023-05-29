@@ -265,13 +265,78 @@ class ContinentContouring(object):
         
         #print('age:', age, 'frag_index (1/km):', total_perimeter / total_area / 6371.0); sys.stdout.flush()
         return total_perimeter / total_area
+
+
+    def get_continent_mask(
+            self,
+            age):
+        """
+        Reconstruct the continents (specified in constructor) and then find the latitude/longitude grid points that are inside them.
+
+        The grid spacing of these grid points was specified in the constructor.
+
+        The 'age' is only used to look up the time-dependent buffer/gap threshold (using function passed into constructor).
+
+        Returns a 2D boolean numpy array of shape (num_latitudes, num_longitudes).
+        Note that when writing to a NetCDF grid file you can convert to floating-point (with "continent_mask.astype('float')").
+        """
+
+        # Reconstruct the static continental polygons.
+        reconstructed_continent_polygons = self.get_reconstructed_continent_polygons(age)
+        
+        # Calculate the latitude/longitude grid points that are inside the reconstructed continent polygons.
+        return self.calculate_continent_mask(reconstructed_continent_polygons, age)
     
     
     def get_contoured_continents(
             self,
             age):
         """
-        Reconstruct the continents and then find the boundaries of the specified (potentially overlapping/abutting) continent polygons.
+        Reconstruct the continents (specified in constructor) and then find their reconstructed (potentially overlapping/abutting)
+        boundaries as contoured continents.
+
+        Returns a list of 'ContouredContinent'.
+        """
+
+        # Reconstruct the static continental polygons.
+        reconstructed_continent_polygons = self.get_reconstructed_continent_polygons(age)
+        
+        # Calculate contoured continents representing the boundary(s) of the reconstructed continent polygons that overlap each other.
+        return self.calculate_contoured_continents(reconstructed_continent_polygons, age)
+    
+    
+    def get_continent_mask_and_contoured_continents(
+            self,
+            age):
+        """
+        Reconstruct the continents (specified in constructor) and then find both the find the latitude/longitude grid points that are inside them
+        and their reconstructed (potentially overlapping/abutting) boundaries as contoured continents.
+
+        Returns a 2-tuple of (a 2D boolean numpy array of shape (num_latitudes, num_longitudes), a list of 'ContouredContinent').
+        """
+
+        # Reconstruct the static continental polygons.
+        reconstructed_continent_polygons = self.get_reconstructed_continent_polygons(age)
+        
+        # Calculate the latitude/longitude grid points that are inside the reconstructed continent polygons.
+        continent_mask = self.calculate_continent_mask(reconstructed_continent_polygons, age)
+        
+        # Calculate contoured continents representing the boundary(s) of the mask grid points (around grid values evaluating to True).
+        contoured_continents = self._calculate_contoured_continents_from_continent_mask(continent_mask, age)
+    
+        return continent_mask, contoured_continents
+    
+    
+    def get_reconstructed_continent_polygons(
+            self,
+            age):
+        """
+        Reconstruct the continents (specified in constructor).
+
+        Note that these are just the original continent polygons, but reconstructed.
+        They are NOT contoured, and they can still overlap/abutt each other.
+
+        Returns a list of 'pygplates.PolygonOnSphere'.
         """
         
         # Reconstruct static continental polygons.
@@ -282,25 +347,23 @@ class ContinentContouring(object):
         #
         # We should have polygons (not polylines) but turn into a polygon if happens to be a polyline
         # (but that actually only works if the polyline is a closed loop and not just part of a polygon's boundary).
-        reconstructed_polygons = [pygplates.PolygonOnSphere(reconstructed_feature_geometry.get_reconstructed_geometry())
+        return [pygplates.PolygonOnSphere(reconstructed_feature_geometry.get_reconstructed_geometry())
                 for reconstructed_feature_geometry in reconstructed_feature_geometries]
-        
-        # Calculate contoured continents representing the boundary(s) of the reconstructed continent polygons that overlap each other.
-        contoured_continents = self.calculate_contoured_continents(reconstructed_polygons, age)
-        
-        return contoured_continents
 
 
-    def get_continent_mask(
+    def calculate_continent_mask(
             self,
             continent_polygons,
             age):
         """
-        Find the latitude/longitude grid points that are inside (one or more) continent polygons.
+        Find the latitude/longitude grid points that are inside (one or more) the specified continent polygons.
 
         The grid spacing of these grid points was specified in the constructor.
 
         The 'age' is only used to look up the time-dependent buffer/gap threshold (using function passed into constructor).
+
+        Returns a 2D boolean numpy array of shape (num_latitudes, num_longitudes).
+        Note that when writing to a NetCDF grid file you can convert to floating-point (with "continent_mask.astype('float')").
         """
 
         # Find the reconstructed continental polygon (if any) containing each point.
@@ -341,15 +404,33 @@ class ContinentContouring(object):
             continent_polygons,
             age):
         """
-        Find the boundaries of the specified (potentially overlapping/abutting) continent polygons as contour polygons.
+        Find the boundaries of the specified (potentially overlapping/abutting) continent polygons as contour continents.
 
         The 'age' is only used to look up the time-dependent contouring thresholds (using functions passed into constructor).
+
+        Returns a list of 'ContouredContinent'.
         """
 
         # Get the continent mask at the grid points (grid spacing was specified in constructor).
         #
         # The mask is a numpy array of shape (num_latitudes, num_longitudes).
-        points_inside_contour = self.get_continent_mask(continent_polygons, age)
+        points_inside_contour = self.calculate_continent_mask(continent_polygons, age)
+
+        # Find the boundaries of the mask grid points (around grid values evaluating to True).
+        return self._calculate_contoured_continents_from_continent_mask(points_inside_contour, age)
+
+    
+    def _calculate_contoured_continents_from_continent_mask(
+            self,
+            points_inside_contour,
+            age):
+        """
+        Find the boundaries of the specified mask grid points (around grid values evaluating to True).
+
+        The 'age' is only used to look up the time-dependent contouring thresholds (using functions passed into constructor).
+
+        Returns a list of 'ContouredContinent'.
+        """
 
         # Get the time-dependent area threshold.
         contouring_area_threshold_steradians = self.contouring_area_threshold_steradians_function(age)
