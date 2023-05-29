@@ -191,15 +191,19 @@ class ContinentContouring(object):
             # The grid spacing (in degrees) between points in the grid used for contouring/aggregrating blocks of continental polygons.
             continent_contouring_point_spacing_degrees,
 
-            # Function (accepting time in Ma) to return area threshold (in square radians) when creating continent contours.
+            # Parameter specifying area threshold (in square radians) when creating continent contours.
             #
-            # Contour polygons smaller than this will be excluded when contouring/aggregrating blocks of continental polygons.
+            # Can also be a function (accepting time in Ma) and returning the area threshold.
+            #
+            # Contour polygons smaller than this threshold will be excluded when contouring/aggregrating blocks of continental polygons.
             #
             # Note: Units here are for normalised sphere (ie, steradians or square radians) so full Earth area is 4*pi.
             #       So 0.1 covers an area of approximately 4,000,000 km^2 (ie, 0.1 * 6371^2, where Earth radius is 6371km).
-            continent_contouring_area_threshold_steradians_function,
+            continent_contouring_area_threshold_steradians,
 
-            # Function (accepting time in Ma) to return distance threshold to ensure small gaps between continents are ignored during contouring.
+            # Parameter specifying distance threshold to ensure small gaps between continents are ignored during contouring.
+            #
+            # Can also be a function (accepting time in Ma) and returning the distance threshold.
             #
             # The continent(s) will be expanded by a buffer of this distance (in radians) when contouring/aggregrating blocks of continental polygons.
             #
@@ -208,14 +212,25 @@ class ContinentContouring(object):
             # Note: Units here are for normalised sphere (ie, radians).
             #       So 1.0 radian is approximately 6371 km (where Earth radius is 6371 km).
             #       Also 1.0 degree is approximately 110 km.
-            continent_contouring_buffer_and_gap_threshold_radians_function):
+            continent_contouring_buffer_and_gap_threshold_radians):
         
         self.rotation_model = pygplates.RotationModel(rotaton_model_or_features)
         self.continent_features = continent_features
 
-        # A point grid to calculate contour polygons representing the boundary of reconstructed static polygons that overlap each other.
-        self.contouring_area_threshold_steradians_function = continent_contouring_area_threshold_steradians_function
-        self.continent_contouring_buffer_and_gap_threshold_radians_function = continent_contouring_buffer_and_gap_threshold_radians_function
+        # Convert area threshold to a function of time, if not already a function.
+        if callable(continent_contouring_area_threshold_steradians):
+            self.continent_contouring_area_threshold_steradians_function = continent_contouring_area_threshold_steradians
+        else:
+            def continent_contouring_area_threshold_steradians_function(age):
+                return continent_contouring_area_threshold_steradians
+            self.continent_contouring_area_threshold_steradians_function = continent_contouring_area_threshold_steradians_function
+        # Convert buffer/gap threshold to a function of time, if not already a function.
+        if callable(continent_contouring_buffer_and_gap_threshold_radians):
+            self.continent_contouring_buffer_and_gap_threshold_radians_function = continent_contouring_buffer_and_gap_threshold_radians
+        else:
+            def continent_contouring_buffer_and_gap_threshold_radians_function(age):
+                return continent_contouring_buffer_and_gap_threshold_radians
+            self.continent_contouring_buffer_and_gap_threshold_radians_function = continent_contouring_buffer_and_gap_threshold_radians_function
 
         # The number of latitudes (including -90 and 90).
         self.contouring_grid_num_latitudes = int(math.ceil(180.0 / continent_contouring_point_spacing_degrees)) + 1
@@ -224,6 +239,8 @@ class ContinentContouring(object):
 
         self.contouring_point_spacing_degrees = 180.0 / (self.contouring_grid_num_latitudes - 1)
 
+        # A point grid to calculate contour polygons representing the boundary of reconstructed static polygons that overlap each other.
+        #
         # NOTE: We must generate points on the dateline (ie, at both longitude -180 and 180) since the
         #       contouring alorithm depends on this. We also generate points at the North and South poles
         #       for the same reason.
@@ -433,7 +450,7 @@ class ContinentContouring(object):
         """
 
         # Get the time-dependent area threshold.
-        contouring_area_threshold_steradians = self.contouring_area_threshold_steradians_function(age)
+        contouring_area_threshold_steradians = self.continent_contouring_area_threshold_steradians_function(age)
         
         num_latitudes = self.contouring_grid_num_latitudes
         num_longitudes = self.contouring_grid_num_longitudes
