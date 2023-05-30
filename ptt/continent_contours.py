@@ -744,14 +744,18 @@ class ContinentContouring(object):
             first_contour_segment_lat_lon_indices,
             marching_squares,
             marching_squares_containing_segments)
-
-        # Exclude contour polygon if its area is smaller than the threshold.
-        if contour_polygon.get_area() < contouring_area_threshold_steradians:
-            return
         
         # A point inside the contoured continent might actually be outside the current contour polygon (eg, if it's an interior hole).
         # So determine whether this is the case or not (since the contoured continent needs to know this when it's asked to do point-in-polygon tests).
         contour_polygon_inside_is_continent = contour_polygon.is_point_in_polygon(any_point_inside_contoured_continent)
+
+        # Exclude contour polygon if it includes continental crust and its area is smaller than the threshold.
+        #
+        # Note: We don't use area threshold on exclusive (ocean) polygons.
+        #       Otherwise island slivers of ocean crust sandwiched between continental crust are not contoured.
+        if contour_polygon_inside_is_continent and (contour_polygon.get_area() < contouring_area_threshold_steradians):
+            return
+
         contoured_continent.add_polygon(contour_polygon, contour_polygon_inside_is_continent)
 
 
