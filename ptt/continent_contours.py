@@ -180,13 +180,13 @@ class ContouredContinent(object):
 
 class ContinentContouring(object):
     """
-    Class to calculate continent contours, and fragmentation index (global perimeter-to-area ratio), at various times.
+    Class to calculate continent mask, contours, and fragmentation index (global perimeter-to-area ratio), at various times.
     """
     
     def __init__(
             self,
             rotaton_model_or_features,
-            continent_features,
+            continent_features,  # regular features (not topologies)
 
             # The grid spacing (in degrees) between points in the grid used for contouring/aggregrating blocks of continental polygons.
             continent_contouring_point_spacing_degrees,
@@ -292,8 +292,6 @@ class ContinentContouring(object):
 
         The grid spacing of these grid points was specified in the constructor.
 
-        The 'age' is only used to look up the time-dependent buffer/gap threshold (using function passed into constructor).
-
         Returns a 2D boolean numpy array of shape (num_latitudes, num_longitudes).
         Note that when writing to a NetCDF grid file you can convert to floating-point (with "continent_mask.astype('float')").
         """
@@ -371,13 +369,14 @@ class ContinentContouring(object):
     def calculate_continent_mask(
             self,
             continent_polygons,
-            age):
+            age = 0):
         """
         Find the latitude/longitude grid points that are inside (one or more) the specified continent polygons.
 
         The grid spacing of these grid points was specified in the constructor.
 
-        The 'age' is only used to look up the time-dependent buffer/gap threshold (using function passed into constructor).
+        The 'age' is only used to look up the time-dependent thresholds (passed into constructor).
+        If threshold does not vary with time then 'age' does not need to be specified (defaults to present day).
 
         Returns a 2D boolean numpy array of shape (num_latitudes, num_longitudes).
         Note that when writing to a NetCDF grid file you can convert to floating-point (with "continent_mask.astype('float')").
@@ -419,11 +418,12 @@ class ContinentContouring(object):
     def calculate_contoured_continents(
             self,
             continent_polygons,
-            age):
+            age = 0):
         """
         Find the boundaries of the specified (potentially overlapping/abutting) continent polygons as contour continents.
 
-        The 'age' is only used to look up the time-dependent contouring thresholds (using functions passed into constructor).
+        The 'age' is only used to look up the time-dependent thresholds (passed into constructor).
+        If threshold does not vary with time then 'age' does not need to be specified (defaults to present day).
 
         Returns a list of 'ContouredContinent'.
         """
@@ -440,11 +440,12 @@ class ContinentContouring(object):
     def _calculate_contoured_continents_from_continent_mask(
             self,
             points_inside_contour,
-            age):
+            age = 0):
         """
         Find the boundaries of the specified mask grid points (around grid values evaluating to True).
 
-        The 'age' is only used to look up the time-dependent contouring thresholds (using functions passed into constructor).
+        The 'age' is only used to look up the time-dependent thresholds (passed into constructor).
+        If threshold does not vary with time then 'age' does not need to be specified (defaults to present day).
 
         Returns a list of 'ContouredContinent'.
         """
