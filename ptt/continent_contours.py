@@ -81,6 +81,10 @@ class ContouredContinent(object):
     def are_points_inside(self, points, points_spatial_tree=None):
         """Returns a numpy 1D boolean array with same length as 'points' (and in same order) containing True for each point inside this contoured continent."""
 
+        # Need at least one contour (polygon) for point-in-continent test.
+        if not (self._polygons_including_continent or self._polygons_excluding_continent):
+            raise AssertionError('Continent has no contours - cannot do point-in-continent tests')
+
         # Improve efficiency by re-using spatial tree of points if caller provides it (otherwise create our own).
         if not points_spatial_tree:
             points_spatial_tree = points_spatial_tree.PointsSpatialTree(points)
@@ -148,6 +152,10 @@ class ContouredContinent(object):
         """
         The area of this contoured continent (in steradians).
         """
+        # Need at least one contour (polygon) to determine area of continent.
+        if not (self._polygons_including_continent or self._polygons_excluding_continent):
+            raise AssertionError('Continent has no contours - cannot determine area of continent')
+
         area = 0.0
 
         # Add the areas of polygons that include continent and subtract areas of polygons that exclude continent.
@@ -683,9 +691,9 @@ class ContinentContouring(object):
                 #  |  |  |
                 #  +--+--+
                 #
-                # However we don't wrap around the dateline (longitude) and we don't traverse beyond the poles (latitude).
-                # We don't need to wrap around dateline because a point at longitude -180 will search the two squares on its right
-                # and a point at longitude +180 will search the two squares on its left.
+                # Note that we need to wrap around the dateline (longitude) because we need to visit (and remove) ALL points that
+                # are inside the *current* contoured continent (before we move onto the next contoured continent).
+                # However we don't need to traverse beyond the poles (latitude) in the same way.
                 #
 
                 if latitude_index > 0:
@@ -699,9 +707,21 @@ class ContinentContouring(object):
                         if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
                             points_inside_contoured_continent.append(neighbour_point_location)
                             points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
+                    else:
+                        # Wrap around the dateline.
+                        neighbour_point_location = latitude_index - 1, num_longitudes - 1
+                        if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
+                            points_inside_contoured_continent.append(neighbour_point_location)
+                            points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
                     
                     if longitude_index < num_longitudes - 1:
                         neighbour_point_location = latitude_index - 1, longitude_index + 1
+                        if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
+                            points_inside_contoured_continent.append(neighbour_point_location)
+                            points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
+                    else:
+                        # Wrap around the dateline.
+                        neighbour_point_location = latitude_index - 1, 0
                         if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
                             points_inside_contoured_continent.append(neighbour_point_location)
                             points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
@@ -717,9 +737,21 @@ class ContinentContouring(object):
                         if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
                             points_inside_contoured_continent.append(neighbour_point_location)
                             points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
+                    else:
+                        # Wrap around the dateline.
+                        neighbour_point_location = latitude_index + 1, num_longitudes - 1
+                        if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
+                            points_inside_contoured_continent.append(neighbour_point_location)
+                            points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
 
                     if longitude_index < num_longitudes - 1:
                         neighbour_point_location = latitude_index + 1, longitude_index + 1
+                        if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
+                            points_inside_contoured_continent.append(neighbour_point_location)
+                            points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
+                    else:
+                        # Wrap around the dateline.
+                        neighbour_point_location = latitude_index + 1, 0
                         if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
                             points_inside_contoured_continent.append(neighbour_point_location)
                             points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
@@ -729,9 +761,21 @@ class ContinentContouring(object):
                     if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
                         points_inside_contoured_continent.append(neighbour_point_location)
                         points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
+                else:
+                    # Wrap around the dateline.
+                    neighbour_point_location = latitude_index, num_longitudes - 1
+                    if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
+                        points_inside_contoured_continent.append(neighbour_point_location)
+                        points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
 
                 if longitude_index < num_longitudes - 1:
                     neighbour_point_location = latitude_index, longitude_index + 1
+                    if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
+                        points_inside_contoured_continent.append(neighbour_point_location)
+                        points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
+                else:
+                    # Wrap around the dateline.
+                    neighbour_point_location = latitude_index, 0
                     if neighbour_point_location in points_inside_all_contoured_continents_to_visit:
                         points_inside_contoured_continent.append(neighbour_point_location)
                         points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
