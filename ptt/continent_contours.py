@@ -195,7 +195,7 @@ class ContinentContouring(object):
             #
             # Can also be a function (accepting time in Ma) and returning the area threshold.
             #
-            # Contour polygons smaller than this threshold will be excluded when contouring/aggregrating blocks of continental polygons.
+            # Contoured continents with area smaller than this threshold will be excluded.
             #
             # Note: Units here are for normalised sphere (ie, steradians or square radians) so full Earth area is 4*pi.
             #       So 0.1 covers an area of approximately 4,000,000 km^2 (ie, 0.1 * 6371^2, where Earth radius is 6371km).
@@ -603,7 +603,7 @@ class ContinentContouring(object):
         # Each contoured continent is found by picking an arbitrary point inside any contours and expanding around it until we've filled
         # the entire contoured continent. As we expand we detect when we reach a contour that has not yet been generated and generate it
         # for the current contoured continent. This expanding fill can detect more than one contour per contoured continent.
-        # If any contour has an area below the area threshold then we ignore that contour.
+        # If any contoured continent has an area below the area threshold then we ignore that contoured continent.
         #
         # This is repeated to find all contoured continents (at which time we will have no more points left to visit inside contours).
         #
@@ -647,14 +647,14 @@ class ContinentContouring(object):
                         if neighbour_square_location in marching_squares_containing_segments:
                             self._add_contour_polygon_to_contoured_continent(
                                 contoured_continent, self.contouring_points[point_index], neighbour_square_location,
-                                marching_squares, marching_squares_containing_segments, contouring_area_threshold_steradians)
+                                marching_squares, marching_squares_containing_segments)
                     
                     if longitude_index < num_longitudes - 1:
                         neighbour_square_location = latitude_index - 1, longitude_index
                         if neighbour_square_location in marching_squares_containing_segments:
                             self._add_contour_polygon_to_contoured_continent(
                                 contoured_continent, self.contouring_points[point_index], neighbour_square_location,
-                                marching_squares, marching_squares_containing_segments, contouring_area_threshold_steradians)
+                                marching_squares, marching_squares_containing_segments)
 
                 if latitude_index < num_latitude_intervals - 1:
                     if longitude_index > 0:
@@ -662,14 +662,14 @@ class ContinentContouring(object):
                         if neighbour_square_location in marching_squares_containing_segments:
                             self._add_contour_polygon_to_contoured_continent(
                                 contoured_continent, self.contouring_points[point_index], neighbour_square_location,
-                                marching_squares, marching_squares_containing_segments, contouring_area_threshold_steradians)
+                                marching_squares, marching_squares_containing_segments)
                     
                     if longitude_index < num_longitudes - 1:
                         neighbour_square_location = latitude_index, longitude_index
                         if neighbour_square_location in marching_squares_containing_segments:
                             self._add_contour_polygon_to_contoured_continent(
                                 contoured_continent, self.contouring_points[point_index], neighbour_square_location,
-                                marching_squares, marching_squares_containing_segments, contouring_area_threshold_steradians)
+                                marching_squares, marching_squares_containing_segments)
 
                 #
                 # Propagate outwards from current point to progressively fill the inside of the current contoured continent.
@@ -736,9 +736,8 @@ class ContinentContouring(object):
                         points_inside_contoured_continent.append(neighbour_point_location)
                         points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
 
-            # If the contoured continent has one or more contour polygons then add it to the list.
-            # Otherwise all its contour polygons had areas below the area threshold.
-            if contoured_continent.get_polygons():
+            # If the contoured continent has one or more contour polygons and its area is smaller than the area threshold then add it to the list.
+            if contoured_continent.get_polygons() and (contoured_continent.get_area() >= contouring_area_threshold_steradians):
                 contoured_continents.append(contoured_continent)
         
         return contoured_continents
@@ -750,10 +749,9 @@ class ContinentContouring(object):
             any_point_inside_contoured_continent,
             first_contour_segment_lat_lon_indices,
             marching_squares,
-            marching_squares_containing_segments,
-            contouring_area_threshold_steradians):
+            marching_squares_containing_segments):
         """
-        Extract a contour polygon and add it to the contoured continent if its area is above the area threshold.
+        Extract a contour polygon and add it to the contoured continent.
         """
 
         # First extract the contour polygon (starting at the first segment given to us).
@@ -765,13 +763,6 @@ class ContinentContouring(object):
         # A point inside the contoured continent might actually be outside the current contour polygon (eg, if it's an interior hole).
         # So determine whether this is the case or not (since the contoured continent needs to know this when it's asked to do point-in-polygon tests).
         contour_polygon_inside_is_continent = contour_polygon.is_point_in_polygon(any_point_inside_contoured_continent)
-
-        # Exclude contour polygon if it includes continental crust and its area is smaller than the threshold.
-        #
-        # Note: We don't use area threshold on exclusive (ocean) polygons.
-        #       Otherwise island slivers of ocean crust sandwiched between continental crust are not contoured.
-        if contour_polygon_inside_is_continent and (contour_polygon.get_area() < contouring_area_threshold_steradians):
-            return
 
         contoured_continent.add_polygon(contour_polygon, contour_polygon_inside_is_continent)
 
