@@ -81,10 +81,6 @@ class ContouredContinent(object):
     def are_points_inside(self, points, points_spatial_tree=None):
         """Returns a numpy 1D boolean array with same length as 'points' (and in same order) containing True for each point inside this contoured continent."""
 
-        # Need at least one contour (polygon) for point-in-continent test.
-        if not (self._polygons_including_continent or self._polygons_excluding_continent):
-            raise AssertionError('Continent has no contours - cannot do point-in-continent tests')
-
         # Improve efficiency by re-using spatial tree of points if caller provides it (otherwise create our own).
         if not points_spatial_tree:
             points_spatial_tree = points_spatial_tree.PointsSpatialTree(points)
@@ -119,6 +115,8 @@ class ContouredContinent(object):
             # Note that this contoured continent might not have any polygons that *include* continental crust.
             # This is fine because the contoured region is then the entire globe minus the *excluded* regions.
             # And, in this case, as long as the current point is not inside any excluded regions then it is inside the contoured region.
+            # A special (unlikely) case of that is a single continent covering the entire globe (ie, no contours), and
+            # it will return true for any point on the globe.
             inclusive_polygon_indices = inclusive_polygons_containing_points[point_index]
             num_inclusive_polygons_containing_point = len(inclusive_polygon_indices) if inclusive_polygon_indices else 0
             if num_inclusive_polygons_containing_point != len(self._polygons_including_continent):
@@ -152,10 +150,6 @@ class ContouredContinent(object):
         """
         The area of this contoured continent (in steradians).
         """
-        # Need at least one contour (polygon) to determine area of continent.
-        if not (self._polygons_including_continent or self._polygons_excluding_continent):
-            raise AssertionError('Continent has no contours - cannot determine area of continent')
-
         area = 0.0
 
         # Add the areas of polygons that include continent and subtract areas of polygons that exclude continent.
@@ -176,6 +170,7 @@ class ContouredContinent(object):
         # When 2 polygons include continent then we need to subtract the area of the globe (hence -4*pi) and when
         # 3 polygons include continent then we need to subtract twice the area of the globe (hence -8*pi).
         # This was determined by drawing up a few examples to see the pattern.
+        # A special (unlikely) case is a single continent covering the entire globe (ie, no contours, and area 4*pi).
         area -= 4 * math.pi * (len(self._polygons_including_continent) - 1)
 
         return area
@@ -403,6 +398,8 @@ class ContinentContouring(object):
         """
         Find the boundaries of the specified (potentially overlapping/abutting) continent polygons as contour continents.
 
+        Note that small continent islands with area less than the area threshold will NOT get returned.
+
         The 'age' is only used to look up the time-dependent thresholds (passed into constructor).
         If threshold does not vary with time then 'age' does not need to be specified (defaults to present day).
 
@@ -411,7 +408,14 @@ class ContinentContouring(object):
         
         grid_points_inside_or_near_continent_polygons = self._find_grid_points_inside_or_near_continent_polygons(continent_polygons, age)
 
-        return self._find_contoured_continents(grid_points_inside_or_near_continent_polygons, age)
+        contoured_continents = self._find_contoured_continents(grid_points_inside_or_near_continent_polygons, age)
+
+        # Get the time-dependent area threshold.
+        contouring_area_threshold_steradians = self.continent_contouring_area_threshold_steradians_function(age)
+        
+        # If any contoured continent has an area below the area threshold then we don't return that contoured continent.
+        return [contoured_continent for contoured_continent in contoured_continents
+                if contoured_continent.get_area() >= contouring_area_threshold_steradians]
 
 
     def _find_grid_points_inside_or_near_continent_polygons(
@@ -468,15 +472,10 @@ class ContinentContouring(object):
         """
         Find the boundaries of the specified mask of grid points (in or near a continent polygon).
 
-        Note that small continent islands with area less than the area threshold will NOT get contoured.
-
         The 'age' is only used to look up the time-dependent thresholds (passed into constructor).
 
         Returns a list of 'ContouredContinent'.
         """
-
-        # Get the time-dependent area threshold.
-        contouring_area_threshold_steradians = self.continent_contouring_area_threshold_steradians_function(age)
         
         num_latitudes = self.contouring_grid_num_latitudes
         num_longitudes = self.contouring_grid_num_longitudes
@@ -615,7 +614,6 @@ class ContinentContouring(object):
         # Each contoured continent is found by picking an arbitrary point inside any contours and expanding around it until we've filled
         # the entire contoured continent. As we expand we detect when we reach a contour that has not yet been generated and generate it
         # for the current contoured continent. This expanding fill can detect more than one contour per contoured continent.
-        # If any contoured continent has an area below the area threshold then we ignore that contoured continent.
         #
         # This is repeated to find all contoured continents (at which time we will have no more points left to visit inside contours).
         #
@@ -786,9 +784,15 @@ class ContinentContouring(object):
                         points_inside_contoured_continent.append(neighbour_point_location)
                         points_inside_all_contoured_continents_to_visit.remove(neighbour_point_location)
 
-            # If the contoured continent has one or more contour polygons and its area is smaller than the area threshold then add it to the list.
-            if contoured_continent.get_polygons() and (contoured_continent.get_area() >= contouring_area_threshold_steradians):
-                contoured_continents.append(contoured_continent)
+            # The current contoured continent should have encountered one or more contours since
+            # it was filled until it reached a boundary (contour) between continent and ocean.
+            if not contoured_continent.get_polygons():
+                # However it is potentially possible for contintental crust to cover the entire globe (ie, no contours).
+                # In this case there must be only one continent, which means no continents so far and all points have been visited.
+                if contoured_continents or points_inside_all_contoured_continents_to_visit:
+                    raise AssertionError('A single continent covering entire globe must be the only continent')
+            
+            contoured_continents.append(contoured_continent)
         
         return contoured_continents
 
