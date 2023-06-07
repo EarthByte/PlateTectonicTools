@@ -301,15 +301,14 @@ class ContinentContouring(object):
 
         contoured_continents = self.get_contoured_continents(age)
         
-        return self.calculate_continent_mask(contoured_continents, age)
+        return self.calculate_continent_mask(contoured_continents)
     
     
     def get_contoured_continents(
             self,
             age):
         """
-        Reconstruct the continents (specified in constructor) and then find their reconstructed (potentially overlapping/abutting)
-        boundaries as contoured continents.
+        Reconstruct the continents (specified in constructor) and then find their boundaries as contoured continents.
 
         Returns a list of 'ContouredContinent'.
         """
@@ -323,15 +322,15 @@ class ContinentContouring(object):
             self,
             age):
         """
-        Reconstruct the continents (specified in constructor) and then find both the find the latitude/longitude grid points that are inside them
-        and their reconstructed (potentially overlapping/abutting) boundaries as contoured continents.
+        Reconstruct the continents (specified in constructor) and then find both their boundaries as contoured continents and
+        the latitude/longitude grid points that are inside them.
 
         Returns a 2-tuple of (a 2D boolean numpy array of shape (num_latitudes, num_longitudes), a list of 'ContouredContinent').
         """
 
         contoured_continents = self.get_contoured_continents(age)
         
-        continent_mask = self.calculate_continent_mask(contoured_continents, age)
+        continent_mask = self.calculate_continent_mask(contoured_continents)
     
         return continent_mask, contoured_continents
     
@@ -342,8 +341,8 @@ class ContinentContouring(object):
         """
         Reconstruct the continents (specified in constructor).
 
-        Note that these are just the original continent polygons, but reconstructed.
-        They are NOT contoured, and they can still overlap/abutt each other.
+        Note that these are just the original continent polygons (but reconstructed).
+        They are NOT contoured, so they can still overlap/abutt each other.
 
         Returns a list of 'pygplates.PolygonOnSphere'.
         """
@@ -362,8 +361,7 @@ class ContinentContouring(object):
 
     def calculate_continent_mask(
             self,
-            contoured_continents,
-            age):
+            contoured_continents):
         """
         Find the latitude/longitude grid points that are inside the specified contoured continents.
 
@@ -371,6 +369,101 @@ class ContinentContouring(object):
 
         Returns a 2D boolean numpy array of shape (num_latitudes, num_longitudes).
         Note that when writing to a NetCDF grid file you can convert to floating-point (with "continent_mask.astype('float')").
+        """
+    
+        return self._find_grid_points_inside_contoured_continents(contoured_continents)
+
+    
+    def calculate_contoured_continents(
+            self,
+            continent_polygons,
+            age = 0):
+        """
+        Find the boundaries of the specified (potentially overlapping/abutting) continent polygons as contoured continents.
+
+        Note that small contoured continent islands with area less than the area threshold will NOT get returned.
+
+        The 'age' is only used to look up the time-dependent thresholds (passed into constructor).
+        If threshold does not vary with time then 'age' does not need to be specified (defaults to present day).
+
+        Returns a list of 'ContouredContinent'.
+        """
+        
+        # Grid points inside the continent polygons.
+        grid_points_inside_continents = self._find_grid_points_inside_continent_polygons(continent_polygons)
+
+        # Contour the grid points that are inside the continent polygons.
+        contoured_continents = self._find_contoured_continents(grid_points_inside_continents)
+
+        # If the area threshold is non-zero then exclude those contoured continents with area below the threshold.
+        # And also exclude any grid points inside those rejected contoured continents.
+        continent_contouring_area_threshold_steradians = self.continent_contouring_area_threshold_steradians_function(age)
+        if continent_contouring_area_threshold_steradians > 0:
+            # Separate contoured continents above and below the area threshold.
+            included_contoured_continents = []
+            excluded_contoured_continents = []
+            for contoured_continent in contoured_continents:
+                if contoured_continent.get_area() >= continent_contouring_area_threshold_steradians:
+                    included_contoured_continents.append(contoured_continent)
+                else:
+                    excluded_contoured_continents.append(contoured_continent)
+            
+            if excluded_contoured_continents:
+                grid_points_inside_excluded_continents = self._find_grid_points_inside_contoured_continents(excluded_contoured_continents)
+                # Exclude grid points inside rejected contoured continents.
+                grid_points_inside_continents[grid_points_inside_excluded_continents] = False
+                # Exclude rejected contoured continents.
+                contoured_continents = included_contoured_continents
+        
+        # Also include grid points near the contoured continents.
+        # These might be outside the contoured continents but within the buffer/gap threshold distance from them.
+        grid_points_near_contoured_continents = self._find_grid_points_near_contoured_continents(contoured_continents, age)
+        grid_points_inside_continents[grid_points_near_contoured_continents] = True
+
+        # Contour the grid points that are both inside and near the contoured continents
+        # (which in turn contoured the grid points inside the continent polygons).
+        contoured_continents = self._find_contoured_continents(grid_points_inside_continents)
+        
+        return contoured_continents
+
+
+    def _find_grid_points_inside_continent_polygons(
+            self,
+            continent_polygons):
+        """
+        Find the latitude/longitude grid points that are inside (one or more) the specified continent polygons.
+
+        The grid spacing of these grid points was specified in the constructor.
+
+        Returns a 2D boolean numpy array of shape (num_latitudes, num_longitudes).
+        """
+        
+        # Find the reconstructed continental polygon (if any) containing each grid point.
+        continent_polygons_containing_points = points_in_polygons.find_polygons_using_points_spatial_tree(
+                self.contouring_points,
+                self.contouring_points_spatial_tree,
+                continent_polygons)
+
+        # Determine which grid points are inside the continent polygons.
+        points_inside_contour = np.full(len(self.contouring_points), False)
+        for contouring_point_index in range(len(self.contouring_points)):
+            # If the current point is inside any continent polygon then mark it as such.
+            if continent_polygons_containing_points[contouring_point_index] is not None:
+                points_inside_contour[contouring_point_index] = True
+
+        # Reshape 1D array as 2D array indexed by (latitude, longitude) - same order as the points.
+        return points_inside_contour.reshape((self.contouring_grid_num_latitudes, self.contouring_grid_num_longitudes))
+
+
+    def _find_grid_points_inside_contoured_continents(
+            self,
+            contoured_continents):
+        """
+        Find the latitude/longitude grid points that are inside (one or more) the specified contoured continents.
+
+        The grid spacing of these grid points was specified in the constructor.
+
+        Returns a 2D boolean numpy array of shape (num_latitudes, num_longitudes).
         """
     
         # Test all grid points against each contoured continent.
@@ -390,40 +483,13 @@ class ContinentContouring(object):
         # Reshape 1D array as 2D array indexed by (latitude, longitude) - same order as the points.
         return points_inside_any_contoured_continent.reshape((self.contouring_grid_num_latitudes, self.contouring_grid_num_longitudes))
 
-    
-    def calculate_contoured_continents(
+
+    def _find_grid_points_near_contoured_continents(
             self,
-            continent_polygons,
-            age = 0):
-        """
-        Find the boundaries of the specified (potentially overlapping/abutting) continent polygons as contour continents.
-
-        Note that small continent islands with area less than the area threshold will NOT get returned.
-
-        The 'age' is only used to look up the time-dependent thresholds (passed into constructor).
-        If threshold does not vary with time then 'age' does not need to be specified (defaults to present day).
-
-        Returns a list of 'ContouredContinent'.
-        """
-        
-        grid_points_inside_or_near_continent_polygons = self._find_grid_points_inside_or_near_continent_polygons(continent_polygons, age)
-
-        contoured_continents = self._find_contoured_continents(grid_points_inside_or_near_continent_polygons, age)
-
-        # Get the time-dependent area threshold.
-        contouring_area_threshold_steradians = self.continent_contouring_area_threshold_steradians_function(age)
-        
-        # If any contoured continent has an area below the area threshold then we don't return that contoured continent.
-        return [contoured_continent for contoured_continent in contoured_continents
-                if contoured_continent.get_area() >= contouring_area_threshold_steradians]
-
-
-    def _find_grid_points_inside_or_near_continent_polygons(
-            self,
-            continent_polygons,
+            contoured_continents,
             age):
         """
-        Find the latitude/longitude grid points that are inside or near (one or more) the specified continent polygons.
+        Find the latitude/longitude grid points that are near (one or more) the specified contoured continents.
 
         The grid spacing of these grid points was specified in the constructor.
 
@@ -431,48 +497,35 @@ class ContinentContouring(object):
 
         Returns a 2D boolean numpy array of shape (num_latitudes, num_longitudes).
         """
-        
-        # Find the reconstructed continental polygon (if any) containing each point.
-        continent_polygons_containing_points = points_in_polygons.find_polygons_using_points_spatial_tree(
-                self.contouring_points,
-                self.contouring_points_spatial_tree,
-                continent_polygons)
 
-        # Find the reconstructed continental polygon (if any) near each point.
-        # If a point is outside all polygon but close enough to the outline of a polygon then it's considered inside a contour.
-        # This ensures small gaps between continents are ignored during contouring.
-        continent_polygons_near_points = proximity_query.find_closest_geometries_to_points_using_points_spatial_tree(
+        # Get the contours (interior/exterior polygons) of all the contoured continents.
+        contoured_polygons = []
+        for contoured_continent in contoured_continents:
+            contoured_polygons.extend(contoured_continent.get_polygons())
+        
+        # Find the contoured polygons (if any) near each point.
+        contoured_polygons_near_points = proximity_query.find_closest_geometries_to_points_using_points_spatial_tree(
                 self.contouring_points,
                 self.contouring_points_spatial_tree,
-                continent_polygons,
+                contoured_polygons,
                 distance_threshold_radians=self.continent_contouring_buffer_and_gap_threshold_radians_function(age))
 
-        #
-        # Determine which grid points are inside or near the continent polygons.
-        #
-        points_inside_contour = np.full(len(self.contouring_points), False)
+        # Determine which grid points are near the contoured polygons.
+        points_near_contour = np.full(len(self.contouring_points), False)
         for contouring_point_index in range(len(self.contouring_points)):
-            continent_polygon_containing_point = continent_polygons_containing_points[contouring_point_index]
-            continent_polygon_near_point = continent_polygons_near_points[contouring_point_index]
-
-            # If the current point is either inside a continent polygon or close enough to its outline
-            # then mark the point as inside a contour.
-            if (continent_polygon_containing_point is not None or
-                continent_polygon_near_point is not None):
-                points_inside_contour[contouring_point_index] = True
+            # If the current point is near a contoured polygon outline then mark it as such.
+            if contoured_polygons_near_points[contouring_point_index] is not None:
+                points_near_contour[contouring_point_index] = True
 
         # Reshape 1D array as 2D array indexed by (latitude, longitude) - same order as the points.
-        return points_inside_contour.reshape((self.contouring_grid_num_latitudes, self.contouring_grid_num_longitudes))
+        return points_near_contour.reshape((self.contouring_grid_num_latitudes, self.contouring_grid_num_longitudes))
 
     
     def _find_contoured_continents(
             self,
-            points_inside_contour,
-            age):
+            points_inside_contour):
         """
-        Find the boundaries of the specified mask of grid points (in or near a continent polygon).
-
-        The 'age' is only used to look up the time-dependent thresholds (passed into constructor).
+        Find the boundaries of the specified mask of grid points.
 
         Returns a list of 'ContouredContinent'.
         """
