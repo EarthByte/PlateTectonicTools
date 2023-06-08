@@ -195,66 +195,73 @@ class ContinentContouring(object):
             # The grid spacing (in degrees) between points in the grid used for contouring/aggregrating blocks of continental polygons.
             continent_contouring_point_spacing_degrees,
 
-            # Parameter specifying area threshold (in square radians) when creating continent contours.
+            # Optional parameter specifying area threshold (in square radians) when creating continent contours.
             #
             # Can also be a function (accepting time in Ma) and returning the area threshold.
             #
             # Contoured continents with area smaller than this threshold will be excluded.
+            # If this parameter is not specified then no area threshold is applied.
             #
             # Note: Units here are for normalised sphere (ie, steradians or square radians) so full Earth area is 4*pi.
             #       So 0.1 covers an area of approximately 4,000,000 km^2 (ie, 0.1 * 6371^2, where Earth radius is 6371km).
-            continent_contouring_area_threshold_steradians,
+            continent_contouring_area_threshold_steradians = None,
 
-            # Parameter specifying distance threshold to expand contours ocean-ward, which also
+            # Optional parameter specifying a distance (in radians) to expand contours ocean-ward - this also
             # ensures small gaps between continents are ignored during contouring.
             #
-            # The continent(s) will be expanded by a buffer of this distance (in radians) when contouring/aggregrating blocks of continental polygons.
-            # This also has the effect of excluding gaps between continental polygons smaller than this distance.
-            #
-            # This parameter can also be a function that returns the distance threshold.
+            # This parameter can also be a function (that returns the distance).
             # The function can have a single function argument: (1) accepting time (in Ma).
-            # Or the function can have two function arguments: (1) the first accepting time (in Ma) and (2) the second
-            # accepting the area (in steradians) of the (unexpanded) contoured continent that the buffer/gap distance will apply to.
-            # Hence a function with *two* arguments means a different buffer/gap distance can be specified for each contoured continent.
+            # Or it can have two function arguments: (1) the first accepting time (in Ma) and (2) the second accepting the area (in steradians)
+            # of the (unexpanded) contoured continent that the buffer/gap distance will apply to.
+            # Hence a function with *two* arguments means a different buffer/gap distance can be specified for each contoured continent (based on its area).
+            #
+            # The continent(s) will be expanded by a buffer of this distance (in radians) when contouring/aggregrating blocks of continental polygons.
+            # If this parameter is not specified then buffer expansion is applied.
             #
             # Note: Units here are for normalised sphere (ie, radians).
             #       So 1.0 radian is approximately 6371 km (where Earth radius is 6371 km).
             #       Also 1.0 degree is approximately 110 km.
-            continent_contouring_buffer_and_gap_threshold_radians):
+            continent_contouring_buffer_and_gap_distance_radians = None):
         
         self.rotation_model = pygplates.RotationModel(rotaton_model_or_features)
         self.continent_features = continent_features
 
-        # Convert area threshold to a function of time, if not already a function.
-        if callable(continent_contouring_area_threshold_steradians):
-            # We can call the specified function directly.
-            self.continent_contouring_area_threshold_steradians_function = continent_contouring_area_threshold_steradians
-        else:
-            # Use a delegate function that returns the specified parameter.
-            def continent_contouring_area_threshold_steradians_function(age):
-                return continent_contouring_area_threshold_steradians
-            self.continent_contouring_area_threshold_steradians_function = continent_contouring_area_threshold_steradians_function
-        
-        # Convert buffer/gap threshold to a function of time, if not already a function.
-        if callable(continent_contouring_buffer_and_gap_threshold_radians):
-            callable_signature = signature(continent_contouring_buffer_and_gap_threshold_radians)
-            callable_num_args = len(callable_signature.parameters)
-            if not (callable_num_args == 1 or callable_num_args == 2):
-                raise TypeError('Buffer/gap distance is a callable but does not have 1 or 2 arguments')
-            if callable_num_args == 2:
+        if continent_contouring_area_threshold_steradians:
+            # Convert area threshold to a function of time, if not already a function.
+            if callable(continent_contouring_area_threshold_steradians):
                 # We can call the specified function directly.
-                self.continent_contouring_buffer_and_gap_threshold_radians_function = continent_contouring_buffer_and_gap_threshold_radians
-            else:  # callable_num_args == 1
-                # The specified function only accepts age (not area).
-                # So use a delegate function that calls it and ignores area.
-                def continent_contouring_buffer_and_gap_threshold_radians_function(age, area):
-                    return continent_contouring_buffer_and_gap_threshold_radians(age)
-                self.continent_contouring_buffer_and_gap_threshold_radians_function = continent_contouring_buffer_and_gap_threshold_radians_function
-        else:
-            # Use a delegate function that returns the specified parameter.
-            def continent_contouring_buffer_and_gap_threshold_radians_function(age, area):
-                return continent_contouring_buffer_and_gap_threshold_radians
-            self.continent_contouring_buffer_and_gap_threshold_radians_function = continent_contouring_buffer_and_gap_threshold_radians_function
+                self.continent_contouring_area_threshold_steradians_function = continent_contouring_area_threshold_steradians
+            else:
+                # Use a delegate function that returns the specified parameter.
+                def continent_contouring_area_threshold_steradians_function(age):
+                    return continent_contouring_area_threshold_steradians
+                self.continent_contouring_area_threshold_steradians_function = continent_contouring_area_threshold_steradians_function
+        else:  # no area threshold (specified either None or zero)
+            self.continent_contouring_area_threshold_steradians_function = None
+        
+        if continent_contouring_buffer_and_gap_distance_radians:
+            # Convert buffer/gap threshold to a function of time, if not already a function.
+            if callable(continent_contouring_buffer_and_gap_distance_radians):
+                callable_signature = signature(continent_contouring_buffer_and_gap_distance_radians)
+                callable_num_args = len(callable_signature.parameters)
+                if not (callable_num_args == 1 or callable_num_args == 2):
+                    raise TypeError('Buffer/gap distance is a callable but does not have 1 or 2 arguments')
+                if callable_num_args == 2:
+                    # We can call the specified function directly.
+                    self.continent_contouring_buffer_and_gap_distance_radians_function = continent_contouring_buffer_and_gap_distance_radians
+                else:  # callable_num_args == 1
+                    # The specified function only accepts age (not area).
+                    # So use a delegate function that calls it and ignores area.
+                    def continent_contouring_buffer_and_gap_distance_radians_function(age, area):
+                        return continent_contouring_buffer_and_gap_distance_radians(age)
+                    self.continent_contouring_buffer_and_gap_distance_radians_function = continent_contouring_buffer_and_gap_distance_radians_function
+            else:
+                # Use a delegate function that returns the specified parameter.
+                def continent_contouring_buffer_and_gap_distance_radians_function(age, area):
+                    return continent_contouring_buffer_and_gap_distance_radians
+                self.continent_contouring_buffer_and_gap_distance_radians_function = continent_contouring_buffer_and_gap_distance_radians_function
+        else:  # no buffer/gap distance (specified either None or zero)
+            self.continent_contouring_buffer_and_gap_distance_radians_function = None
 
         # The number of latitudes (including -90 and 90).
         self.contouring_grid_num_latitudes = int(math.ceil(180.0 / continent_contouring_point_spacing_degrees)) + 1
@@ -416,34 +423,36 @@ class ContinentContouring(object):
         # Contour the grid points that are inside the continent polygons.
         contoured_continents = self._find_contoured_continents(grid_points_inside_continents)
 
-        # If the area threshold is non-zero then exclude those contoured continents with area below the threshold.
-        # And also exclude any grid points inside those rejected contoured continents.
-        continent_contouring_area_threshold_steradians = self.continent_contouring_area_threshold_steradians_function(age)
-        if continent_contouring_area_threshold_steradians > 0:
-            # Separate contoured continents above and below the area threshold.
-            included_contoured_continents = []
-            excluded_contoured_continents = []
-            for contoured_continent in contoured_continents:
-                if contoured_continent.get_area() >= continent_contouring_area_threshold_steradians:
-                    included_contoured_continents.append(contoured_continent)
-                else:
-                    excluded_contoured_continents.append(contoured_continent)
-            
-            if excluded_contoured_continents:
-                grid_points_inside_excluded_continents = self._find_grid_points_inside_contoured_continents(excluded_contoured_continents)
-                # Exclude grid points inside rejected contoured continents.
-                grid_points_inside_continents[grid_points_inside_excluded_continents] = False
-                # Exclude rejected contoured continents.
-                contoured_continents = included_contoured_continents
+        # If an area threshold was specified.
+        if self.continent_contouring_area_threshold_steradians_function:
+            # If the area threshold is non-zero then exclude those contoured continents with area below the threshold.
+            # And also exclude any grid points inside those rejected contoured continents.
+            continent_contouring_area_threshold_steradians = self.continent_contouring_area_threshold_steradians_function(age)
+            if continent_contouring_area_threshold_steradians > 0:
+                # Separate contoured continents above and below the area threshold.
+                included_contoured_continents = []
+                excluded_contoured_continents = []
+                for contoured_continent in contoured_continents:
+                    if contoured_continent.get_area() >= continent_contouring_area_threshold_steradians:
+                        included_contoured_continents.append(contoured_continent)
+                    else:
+                        excluded_contoured_continents.append(contoured_continent)
+                
+                if excluded_contoured_continents:
+                    grid_points_inside_excluded_continents = self._find_grid_points_inside_contoured_continents(excluded_contoured_continents)
+                    # Exclude grid points inside rejected contoured continents.
+                    grid_points_inside_continents[grid_points_inside_excluded_continents] = False
+                    # Exclude rejected contoured continents.
+                    contoured_continents = included_contoured_continents
         
-        # Also include grid points near the contoured continents.
-        # These might be outside the contoured continents but within the buffer/gap threshold distance from them.
-        grid_points_near_contoured_continents = self._find_grid_points_near_contoured_continents(contoured_continents, age)
-        grid_points_inside_continents[grid_points_near_contoured_continents] = True
-
-        # Contour the grid points that are both inside and near the contoured continents
-        # (which in turn contoured the grid points inside the continent polygons).
-        contoured_continents = self._find_contoured_continents(grid_points_inside_continents)
+        # Also include grid points *near* the contoured continents (if a buffer/gap distance was specified).
+        if self.continent_contouring_buffer_and_gap_distance_radians_function:
+            # These might be outside the contoured continents but within the buffer/gap threshold distance from them.
+            grid_points_near_contoured_continents = self._find_grid_points_near_contoured_continents(contoured_continents, age)
+            grid_points_inside_continents[grid_points_near_contoured_continents] = True
+            # Contour the grid points that are both inside and near the contoured continents
+            # (which in turn contoured the grid points inside the continent polygons).
+            contoured_continents = self._find_contoured_continents(grid_points_inside_continents)
         
         return contoured_continents
 
@@ -522,19 +531,21 @@ class ContinentContouring(object):
         # Determine which grid points are near the contoured continents.
         points_near_any_contoured_continent = np.full(len(self.contouring_points), False)
         for contoured_continent in contoured_continents:
-            contoured_continent_polygons = contoured_continent.get_polygons()
-            contoured_continent_area = contoured_continent.get_area()
 
-            # Find the contoured polygons (if any) near each point.
-            points_near_contoured_continent = proximity_query.find_closest_geometries_to_points_using_points_spatial_tree(
-                    self.contouring_points,
-                    self.contouring_points_spatial_tree,
-                    contoured_continent_polygons,
-                    distance_threshold_radians=self.continent_contouring_buffer_and_gap_threshold_radians_function(age, contoured_continent_area))
-            
-            for contouring_point_index in range(len(self.contouring_points)):
-                if points_near_contoured_continent[contouring_point_index] is not None:
-                    points_near_any_contoured_continent[contouring_point_index] = True
+            # The distance threshold for the current contoured continent.
+            distance_threshold_radians = self.continent_contouring_buffer_and_gap_distance_radians_function(age, contoured_continent.get_area())
+            if distance_threshold_radians > 0:
+
+                # Find the contoured polygons (if any) near each point.
+                points_near_contoured_continent = proximity_query.find_closest_geometries_to_points_using_points_spatial_tree(
+                        self.contouring_points,
+                        self.contouring_points_spatial_tree,
+                        contoured_continent.get_polygons(),
+                        distance_threshold_radians=distance_threshold_radians)
+                
+                for contouring_point_index in range(len(self.contouring_points)):
+                    if points_near_contoured_continent[contouring_point_index] is not None:
+                        points_near_any_contoured_continent[contouring_point_index] = True
 
         # Reshape 1D array as 2D array indexed by (latitude, longitude) - same order as the points.
         return points_near_any_contoured_continent.reshape((self.contouring_grid_num_latitudes, self.contouring_grid_num_longitudes))
