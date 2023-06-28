@@ -47,132 +47,119 @@ class ContouredContinent(object):
         self._polygons_excluding_continent = []
     
 
-    def add_polygon(self, polygon, polygon_inside_is_continent):
+    def _add_landmass(self, landmass_polygon, landmass_polygon_interior_contains_continent, contour_polylines):
         """
-        Add a polygon contour and whether the inside of the polygon represents continental crust.
+        Add a landmass to this contoured continent.
 
-        If the *outside* of the polygon represents continental crust then it represents an interior hole in the
-        contoured continent or at least an area that is not continental (eg, half the globe is not continental).
+        This is a polygon representing the landmass region/area, and one or more polylines representing the landmass boundary(s).
+        
+        If 'landmass_polygon_interior_contains_continent' is *true* then the interior of the polygon represents continental crust.
+        In this case the polygon can have interior rings (holes) which represent oceanic crust.
+        And it's also possible for a landmass polygon to be inside the interior hole of another landmass polygon, and so on.
+        For example, an continental island inside an ocean basin that, in turn, is inside a larger continent.
+        
+        If 'landmass_polygon_interior_contains_continent' is *false* then the landmass is actually a continent that covers
+        the entire globe except for a few oceanic holes. And the specified 'polygon' is actually one of those oceanic holes.
+        This is a special case because you can't have a single global polygon with only interior holes (and no exterior ring).
+        So intead we allow for multiple exterior ring polygons to represent these oceanic holes (and treat them specially).
         """
-        if polygon_inside_is_continent:
-            self._polygons_including_continent.append(polygon)
+        if landmass_polygon_interior_contains_continent:
+            self._polygons_including_continent.append(landmass_polygon)
         else:
-            self._polygons_excluding_continent.append(polygon)
-    
+            self._polygons_excluding_continent.append(landmass_polygon)
+        
+        self._polylines = contour_polylines
 
-    def get_polygons(self):
-        """The polygon contours representing the boundary of this contoured continent."""
-        polygons = []
 
-        # Add contour polygons regardless of whether include or exclude continent.
-        polygons.extend(self._polygons_including_continent)
-        polygons.extend(self._polygons_excluding_continent)
-
-        return polygons
-
-    def get_polygons_including_continent(self):
-        """The polygon contours whose inside contains continental crust."""
-        return self._polygons_including_continent
-
-    def get_polygons_excluding_continent(self):
-        """The polygon contours whose inside does NOT contain continental crust."""
-        return self._polygons_excluding_continent
+    def get_contours(self):
+        """The polyline contours representing the boundaries of continental crust."""
+        return self._polylines
     
 
     def are_points_inside(self, points, points_spatial_tree=None):
         """Returns a numpy 1D boolean array with same length as 'points' (and in same order) containing True for each point inside this contoured continent."""
 
+        # A special (unlikely) case is a single continent covering the entire globe (area 4*pi).
+        # This happens when there are no inclusive polygons and no exclusive polygons.
+        if not self._polygons_including_continent and not self._polygons_excluding_continent:
+            # All points *include* continent.
+            return np.full(len(points), True)
+
         # Improve efficiency by re-using spatial tree of points if caller provides it (otherwise create our own).
         if not points_spatial_tree:
             points_spatial_tree = points_spatial_tree.PointsSpatialTree(points)
-
-        inclusive_polygons_containing_points = points_in_polygons.find_polygons_using_points_spatial_tree(
-                points,
-                points_spatial_tree,
-                self._polygons_including_continent,
-                all_polygons=True)
-        exclusive_polygons_containing_points = points_in_polygons.find_polygons_using_points_spatial_tree(
-                points,
-                points_spatial_tree,
-                self._polygons_excluding_continent,
-                all_polygons=True)
         
-        # By default all points are considered inside this contoured continents unless proven otherwise.
-        points_inside = np.full(len(points), True)
-        for point_index in range(len(points)):
+        # If we have any polygons that *exclude* continent then it means the continent landmass covers the entire globe
+        # except these excluding polygons.
+        if self._polygons_excluding_continent:
+            # By default all points are considered *inside* this contoured continent unless proven *outside*.
+            points_inside = np.full(len(points), True)
 
-            # Normally there is just one polygon that includes continent (and zero or more that exclude), and we simply
-            # see if the current point is inside the sole inclusive polygon and not inside any exclusive polygons.
+            # See if the points are inside any of the exclusive polygons.
+            exclusive_polygons_containing_points = points_in_polygons.find_polygons_using_points_spatial_tree(
+                    points,
+                    points_spatial_tree,
+                    self._polygons_excluding_continent)
+            
+            # Any points *inside* an exclusive polygon are considered to be *outside* this contoured continent.
             #
-            # However with very large contoured continents that are like an annular ring that go right around the globe
-            # it's possible to have 0, 2, 3, etc (ie, anything but 1) polygons that include continent.
-            # When this happens the inside region of the contoured continent is the *intersection* of these *inclusive* polygons.
-            #
-            # Also note that the region of an *inclusive* polygon can overlap the regions of one or more *exclusive* polygons.
-            # So if the current point is inside all *inclusive* polygons it still doesn't necessarily mean its inside the contoured continent.
+            # Note: If there are any inclusive polygons (which must be inside these exclusive polygons) then later
+            #       they will include some of these points that we just excluded.
+            for point_index in range(len(points)):
+                if exclusive_polygons_containing_points[point_index]:
+                    points_inside[point_index] = False
+            
+        # else all polygons *include* continent (ie, none exclude continent)...
+        else:
+            # By default all points are considered *outside* this contoured continent unless proven *inside*.
+            points_inside = np.full(len(points), False)
 
-            # To be inside, the current point must be inside ALL polygons that INCLUDE continental crust.
-            #
-            # Note that this contoured continent might not have any polygons that *include* continental crust.
-            # This is fine because the contoured region is then the entire globe minus the *excluded* regions.
-            # And, in this case, as long as the current point is not inside any excluded regions then it is inside the contoured region.
-            # A special (unlikely) case of that is a single continent covering the entire globe (ie, no contours), and
-            # it will return true for any point on the globe.
-            inclusive_polygon_indices = inclusive_polygons_containing_points[point_index]
-            num_inclusive_polygons_containing_point = len(inclusive_polygon_indices) if inclusive_polygon_indices else 0
-            if num_inclusive_polygons_containing_point != len(self._polygons_including_continent):
-                points_inside[point_index] = False
-                continue
+        if self._polygons_including_continent:
+            # See if the points are inside any of the inclusive polygons.
+            inclusive_polygons_containing_points = points_in_polygons.find_polygons_using_points_spatial_tree(
+                    points,
+                    points_spatial_tree,
+                    self._polygons_including_continent)
+            
+            # Any points *inside* an inclusive polygon are considered to be *inside* this contoured continent.
+            for point_index in range(len(points)):
+                if inclusive_polygons_containing_points[point_index]:
+                    points_inside[point_index] = True
 
-            # To be inside, the current point must be NOT be inside ANY polygon that EXCLUDES continental crust.
-            exclusive_polygon_indices = exclusive_polygons_containing_points[point_index]
-            num_exclusive_polygons_containing_point = len(exclusive_polygon_indices) if exclusive_polygon_indices else 0
-            if num_exclusive_polygons_containing_point != 0:
-                points_inside[point_index] = False
-                continue
-        
         return points_inside
 
 
     def get_perimeter(self):
-        """Sum of the contours surrounding this contoured continent (in radians)."""
-        perimeter = 0.0
+        """Sum of the length of the contour boundaries of this contoured continent (in radians)."""
+        return math.fsum(polyline.get_arc_length() for polyline in self._polylines)
 
-        # Add contour perimeters regardless of whether contour includes or excludes continent.
-        for polygon in self._polygons_including_continent:
-                perimeter += polygon.get_arc_length()
-        for polygon in self._polygons_excluding_continent:
-                perimeter += polygon.get_arc_length()
-        
-        return perimeter
-    
 
     def get_area(self):
-        """
-        The area of this contoured continent (in steradians).
-        """
-        area = 0.0
+        """The area of this contoured continent (in square radians, as known as steradians)."""
 
-        # Add the areas of polygons that include continent and subtract areas of polygons that exclude continent.
+        # A special (unlikely) case is a single continent covering the entire globe (area 4*pi).
+        # This happens when there are no inclusive polygons and no exclusive polygons.
+        if not self._polygons_including_continent and not self._polygons_excluding_continent:
+            return 4 * math.pi
+        
+        area = 0.0
+        
+        # Note that we can get one or more polygons that *exclude* continent.
+        # This can happen when contouring a large landmass such that there is no contour that is an exterior ring.
+        # In this case the landmass covers the entire globe except for a few oceanic holes.
+        # However you can't have a single polygon with only interior holes (and no exterior ring).
+        # So intead we allow for multiple exterior ring polygons to represent these holes (and treat this as a special case).
+        if self._polygons_excluding_continent:
+            # And since we can't have an exterior ring covering the entire globe we need to explicitly add the area of the entire globe.
+            area += 4 * math.pi
+
+            # Subtract the area of the exclusive holes.
+            for polygon in self._polygons_excluding_continent:
+                    area -= polygon.get_area()
+
+        # Add the areas of polygons that include continent.
         for polygon in self._polygons_including_continent:
                 area += polygon.get_area()
-        for polygon in self._polygons_excluding_continent:
-                area -= polygon.get_area()
-        
-        # Normally there is just one polygon that includes continent (and zero or more that exclude), and
-        # we simply take the area of that one inclusive polygon and substract the areas of the exclusive polygons.
-        # In this case the following adds zero area.
-        #
-        # However with very large contoured continents that are like an annular ring that go right around the globe
-        # it's possible to have 0, 2, 3, etc (ie, anything but 1) polygons that include continent.
-        # And this is what the following term takes into account. Essentially we need to offset the area by a multiple
-        # of the area of the globe (4*pi steradians). When 0 polygons include continent then we have only exclusive areas
-        # and so we need to subtract them from the area of the globe (hence the following term becomes 4*pi).
-        # When 2 polygons include continent then we need to subtract the area of the globe (hence -4*pi) and when
-        # 3 polygons include continent then we need to subtract twice the area of the globe (hence -8*pi).
-        # This was determined by drawing up a few examples to see the pattern.
-        # A special (unlikely) case is a single continent covering the entire globe (ie, no contours, and area 4*pi).
-        area -= 4 * math.pi * (len(self._polygons_including_continent) - 1)
 
         return area
 
@@ -215,9 +202,10 @@ class ContinentContouring(object):
             #
             # This parameter can also be a function (that returns the distance).
             # The function can have a single function argument: (1) accepting time (in Ma).
-            # Or it can have two function arguments: (1) the first accepting time (in Ma) and (2) the second accepting the area (in steradians)
+            # Or it can have two function arguments: (1) the first accepting time (in Ma) and
+            # (2) the second accepting the contoured continent (a 'ContouredContinent' object)
             # of the (unexpanded) contoured continent that the buffer/gap distance will apply to.
-            # Hence a function with *two* arguments means a different buffer/gap distance can be specified for each contoured continent (based on its area).
+            # Hence a function with *two* arguments means a different buffer/gap distance can be specified for each contoured continent (eg, based on its area).
             #
             # Note: Units here are for normalised sphere (ie, radians).
             #       So 1.0 radian is approximately 6371 km (where Earth radius is 6371 km).
@@ -237,6 +225,12 @@ class ContinentContouring(object):
             #       So 0.1 covers an area of approximately 4,000,000 km^2 (ie, 0.1 * 6371^2, where Earth radius is 6371km).
             #       Conversely 4,000,000 km^2 is equivalent to (4,000,000 / 6371^2) steradians.
             continent_exclusion_area_threshold_steradians = None):
+        
+        # Make sure pygplates has support for interior rings in polygons.
+        if pygplates.Version.get_imported_version() < pygplates.Version(0, 36):
+            raise RuntimeError(
+                "Using pygplates version {} but version 0.36 or greater is required to support interior rings in polygons".format(
+                    pygplates.Version.get_imported_version()))
         
         self.rotation_model = pygplates.RotationModel(rotaton_model_or_features)
         self.continent_features = continent_features
@@ -491,19 +485,27 @@ class ContinentContouring(object):
             # excluding contoured polygons with area below the threshold.
             continent_exclusion_area_threshold_steradians = self.continent_exclusion_area_threshold_steradians_function(age)
             if continent_exclusion_area_threshold_steradians > 0:
-                # Find excluding contoured polygons below the area threshold.
-                # These will now include (rather than exclude) continental crust.
-                polygons_now_including_continent = []
+                # Find those polygon rings that exclude continental crust and that are below the area threshold.
+                # These rings will now include (rather than exclude) continental crust.
+                ring_polygons_now_including_continent = []
                 for contoured_continent in contoured_continents:
-                    for polygon in contoured_continent.get_polygons_excluding_continent():
-                        if polygon.get_area() < continent_exclusion_area_threshold_steradians:
-                            polygons_now_including_continent.append(polygon)
+                    # For each polygon that *includes* continental crust we'll use its *interior* rings (which exclude continental crust).
+                    for polygon in contoured_continent._polygons_including_continent:
+                        for interior_ring_index in range(polygon.get_number_of_interior_rings()):
+                            interior_ring_polygon = pygplates.PolygonOnSphere(polygon.get_interior_ring_points(interior_ring_index))
+                            if interior_ring_polygon.get_area() < continent_exclusion_area_threshold_steradians:
+                                ring_polygons_now_including_continent.append(interior_ring_polygon)
+                    # For each polygon that *excludes* continental crust we'll use its *exterior* ring (which excludes continental crust).
+                    for polygon in contoured_continent._polygons_excluding_continent:
+                        exterior_ring_polygon = pygplates.PolygonOnSphere(polygon.get_exterior_ring_points())
+                        if exterior_ring_polygon.get_area() < continent_exclusion_area_threshold_steradians:
+                            ring_polygons_now_including_continent.append(exterior_ring_polygon)
                 
-                if polygons_now_including_continent:
-                    # Find the grid points inside the polygons that now include (rather than exclude) continental crust.
-                    grid_points_inside_polygons_now_including_continent = self._find_grid_points_inside_polygons(polygons_now_including_continent)
+                if ring_polygons_now_including_continent:
+                    # Find the grid points inside the ring polygons that now include (rather than exclude) continental crust.
+                    grid_points_inside_ring_polygons_now_including_continent = self._find_grid_points_inside_polygons(ring_polygons_now_including_continent)
                     # Include these grid points.
-                    grid_points_inside_continents[grid_points_inside_polygons_now_including_continent] = True
+                    grid_points_inside_continents[grid_points_inside_ring_polygons_now_including_continent] = True
                     # Re-contour the grid points (now that we've included some previously excluded grid points).
                     contoured_continents = self._find_contoured_continents(grid_points_inside_continents)
         
@@ -586,14 +588,14 @@ class ContinentContouring(object):
         for contoured_continent in contoured_continents:
 
             # The distance threshold for the current contoured continent.
-            distance_threshold_radians = self.continent_contouring_buffer_and_gap_distance_radians_function(age, contoured_continent.get_area())
+            distance_threshold_radians = self.continent_contouring_buffer_and_gap_distance_radians_function(age, contoured_continent)
             if distance_threshold_radians > 0:
 
-                # Find the contoured polygons (if any) near each point.
+                # Find the contours (if any) near each point.
                 points_near_contoured_continent = proximity_query.find_closest_geometries_to_points_using_points_spatial_tree(
                         self.contouring_points,
                         self.contouring_points_spatial_tree,
-                        contoured_continent.get_polygons(),
+                        contoured_continent.get_contours(),
                         distance_threshold_radians=distance_threshold_radians)
                 
                 for contouring_point_index in range(len(self.contouring_points)):
@@ -756,22 +758,24 @@ class ContinentContouring(object):
         contoured_continents = []
         # Keep visting points *inside* any contour until there are no points left to visit.
         while points_inside_all_contoured_continents_to_visit:
-            contoured_continent = ContouredContinent()
+            continent_contours = []
 
             # Keep a queue of points inside the current ContouredContinent that we will search for contours.
             points_inside_contoured_continent = deque()
 
-            # Get any available point (inside any contoured continent).
+            # Get any available point inside any contoured continent.
+            lat_lon_indices_of_first_point_inside_contoured_continent = points_inside_all_contoured_continents_to_visit.pop()
+            point_index_of_first_point_inside_contoured_continent = (lat_lon_indices_of_first_point_inside_contoured_continent[0] * num_longitudes +
+                                                                     lat_lon_indices_of_first_point_inside_contoured_continent[1])
+            first_point_inside_contoured_continent = self.contouring_points[point_index_of_first_point_inside_contoured_continent]
             # This will be the first point inside the current ContouredContinent.
-            points_inside_contoured_continent.append(
-                points_inside_all_contoured_continents_to_visit.pop())
+            points_inside_contoured_continent.append(lat_lon_indices_of_first_point_inside_contoured_continent)
 
             # Find the remaining points inside the current ContouredContinent by recursively searching
             # nearbouring points until we reach a contour boundary of the current ContouredContinent.
             while points_inside_contoured_continent:
                 # Pop the current point to visit.
                 latitude_index, longitude_index = points_inside_contoured_continent.popleft()
-                point_index = latitude_index * num_longitudes + longitude_index
 
                 # Search the four squares, adjacent to the current point, for a contour.
                 #
@@ -793,31 +797,27 @@ class ContinentContouring(object):
                     if longitude_index > 0:
                         neighbour_square_location = latitude_index - 1, longitude_index - 1
                         if neighbour_square_location in marching_squares_containing_segments:
-                            self._add_contour_polygon_to_contoured_continent(
-                                contoured_continent, self.contouring_points[point_index], neighbour_square_location,
-                                marching_squares, marching_squares_containing_segments)
+                            continent_contours.append(
+                                self._extract_contour(neighbour_square_location, marching_squares, marching_squares_containing_segments))
                     
                     if longitude_index < num_longitudes - 1:
                         neighbour_square_location = latitude_index - 1, longitude_index
                         if neighbour_square_location in marching_squares_containing_segments:
-                            self._add_contour_polygon_to_contoured_continent(
-                                contoured_continent, self.contouring_points[point_index], neighbour_square_location,
-                                marching_squares, marching_squares_containing_segments)
+                            continent_contours.append(
+                                self._extract_contour(neighbour_square_location, marching_squares, marching_squares_containing_segments))
 
                 if latitude_index < num_latitude_intervals - 1:
                     if longitude_index > 0:
                         neighbour_square_location = latitude_index, longitude_index - 1
                         if neighbour_square_location in marching_squares_containing_segments:
-                            self._add_contour_polygon_to_contoured_continent(
-                                contoured_continent, self.contouring_points[point_index], neighbour_square_location,
-                                marching_squares, marching_squares_containing_segments)
+                            continent_contours.append(
+                                self._extract_contour(neighbour_square_location, marching_squares, marching_squares_containing_segments))
                     
                     if longitude_index < num_longitudes - 1:
                         neighbour_square_location = latitude_index, longitude_index
                         if neighbour_square_location in marching_squares_containing_segments:
-                            self._add_contour_polygon_to_contoured_continent(
-                                contoured_continent, self.contouring_points[point_index], neighbour_square_location,
-                                marching_squares, marching_squares_containing_segments)
+                            continent_contours.append(
+                                self._extract_contour(neighbour_square_location, marching_squares, marching_squares_containing_segments))
 
                 #
                 # Propagate outwards from current point to progressively fill the inside of the current contoured continent.
@@ -922,42 +922,88 @@ class ContinentContouring(object):
 
             # The current contoured continent should have encountered one or more contours since
             # it was filled until it reached a boundary (contour) between continent and ocean.
-            if not contoured_continent.get_polygons():
+            if not continent_contours:
                 # However it is potentially possible for contintental crust to cover the entire globe (ie, no contours).
                 # In this case there must be only one continent, which means no continents so far and all points have been visited.
                 if contoured_continents or points_inside_all_contoured_continents_to_visit:
                     raise AssertionError('A single continent covering entire globe must be the only continent')
+
+            # Create a ContouredContinent from the contours.
+            # This uses an arbitrary point inside the continent to determine which contours are exterior rings and which are interior rings.
+            contoured_continent = self._create_contoured_continent_from_contours(continent_contours, first_point_inside_contoured_continent)
             
             contoured_continents.append(contoured_continent)
         
         return contoured_continents
 
 
-    def _add_contour_polygon_to_contoured_continent(
+    def _create_contoured_continent_from_contours(
             self,
-            contoured_continent,
-            any_point_inside_contoured_continent,
-            first_contour_segment_lat_lon_indices,
-            marching_squares,
-            marching_squares_containing_segments):
+            contours,
+            any_point_inside_contoured_continent):
         """
-        Extract a contour polygon and add it to the contoured continent.
+        Create a ContouredContinent from the specified contours.
         """
 
-        # First extract the contour polygon (starting at the first segment given to us).
-        contour_polygon = self._extract_contour_polygon(
-            first_contour_segment_lat_lon_indices,
-            marching_squares,
-            marching_squares_containing_segments)
+        # For each contour create a ring (a polygon with only an exterior ring).
+        contour_rings = [pygplates.PolygonOnSphere(contour) for contour in contours]
+
+        def _insert_contour_into_a_landmass_polygon(contour_ring, landmass_polygons):
+            # See if new contour ring contains, or is contained by, any of the existing landmass polygons.
+            for polygon_index, polygon in enumerate(landmass_polygons):
+                exterior_ring, interior_rings = polygon
+                # See if exterior ring *contains* the new contour ring (arbitrarily choose first point on ring).
+                if exterior_ring.is_point_in_polygon(contour_ring[0]):
+                    # Add the new contour ring as an interior ring.
+                    interior_rings.append(contour_ring)
+                    return
+                # See if the new contour ring *contains* the exterior ring (arbitrarily choose first point on ring).
+                elif contour_ring.is_point_in_polygon(exterior_ring[0]):
+                    # Current exterior ring shouldn't have any interior rings - the contouring algorithm should guarantee this.
+                    if interior_rings:
+                        raise AssertionError("Cannot make polygon an interior ring of another polygon if it has an interior ring")
+                    # The new contour ring becomes an exterior ring and the current exterior ring becomes an interior ring.
+                    new_landmass_polygon = contour_ring, [exterior_ring]  # exterior ring, list of interior rings
+                    landmass_polygons[polygon_index] = new_landmass_polygon
+                    return
+            
+            # The new contour ring is not inside (and also does not contain) any of the existing landmass polygons.
+            # So create a new landmass polygon.
+            new_landmass_polygon = contour_ring, []  # exterior ring, list of interior rings
+            landmass_polygons.append(new_landmass_polygon)
+
+        # Arrange the contour rings into a landmass polygon.
+        #
+        # Note that we can get multiple landmass polygons if there is no landmass that is an exterior ring.
+        # In this case the continent covers the entire globe except for a few oceanic holes.
+        # However you can't have a single polygon with only interior holes (and no exterior ring).
+        # So intead we allow for multiple exterior ring polygons to represent these holes (and treat this as a special case).
+        landmass_polygons = []
+        for contour_ring in contour_rings:
+            _insert_contour_into_a_landmass_polygon(contour_ring, landmass_polygons)
         
-        # A point inside the contoured continent might actually be outside the current contour polygon (eg, if it's an interior hole).
-        # So determine whether this is the case or not (since the contoured continent needs to know this when it's asked to do point-in-polygon tests).
-        contour_polygon_inside_is_continent = contour_polygon.is_point_in_polygon(any_point_inside_contoured_continent)
+        contoured_continent = ContouredContinent()
+        
+        # Add each landmass polygon to the contoured continent.
+        for polygon in landmass_polygons:
+            # Convert rings (lists of points) into an actual polygon.
+            exterior_ring, interior_rings = polygon
+            polygon = pygplates.PolygonOnSphere(exterior_ring, interior_rings)
+            # A point inside the continent might actually be outside the current landmass polygon.
+            # So determine whether this is the case or not (since a contoured continent needs to know this when it's asked to do point-in-polygon tests).
+            polygon_interior_contains_continent = polygon.is_point_in_polygon(any_point_inside_contoured_continent)
+            # If the polygon *excludes* continental crust then the contouring algorithm should ensure it doesn't have any interior rings (which should be unreachable).
+            if (not polygon_interior_contains_continent) and interior_rings:
+                raise AssertionError("Contour polygons excluding continental crust should not have interior rings")
+            # Add the polygon, and its contours (rings) as polylines.
+            # Note: Converting contours directly from polygons (with no interior rings) ensures the first and last points in each polyline are the same.
+            contours_as_polylines = [pygplates.PolylineOnSphere(contour_ring) for contour_ring in contour_rings]
+            contoured_continent._add_landmass(polygon, polygon_interior_contains_continent, contours_as_polylines)
 
-        contoured_continent.add_polygon(contour_polygon, contour_polygon_inside_is_continent)
+        return contoured_continent
 
 
-    def _extract_contour_polygon(
+    def _extract_contour(
             self,
             first_segment_lat_lon_indices,
             marching_squares,
@@ -966,7 +1012,7 @@ class ContinentContouring(object):
         Follow the segment in marching square at specified lat/lon index around contour back to that first segment.
 
         Note that a marching square can have two segments, in which case that square represents a thin connecting region between
-        two larger islands of the polygon (but still all just one polygon). That square will get traversed twice (once in one direction
+        two larger islands of the contour (but still all just one contour). That square will get traversed twice (once in one direction
         through one segment and once in another the opposite direction through the second segment of that square).
         """
 
@@ -977,11 +1023,11 @@ class ContinentContouring(object):
         num_longitude_intervals = self.contouring_grid_num_longitudes - 1
 
         #
-        # When a contour is first encountered (during the caller's expanding fill) a contour polygon is generated by starting at the first square
+        # When a contour is first encountered (during the caller's expanding fill) a contour ring is generated by starting at the first square
         # found that contains one (or two) segments, which represents the start of that contour. We then pick one of that square's segments
         # (in most cases it'll only have one segment) and generate the first contour point at that segment's start. Note that it doesn't matter
-        # which segment we pick (if there's two segments) because the contour polygon will traverse back to the second segment (since both segments
-        # are part of the same contour because their containing square represents a thin connecting region between two larger islands of the polygon).
+        # which segment we pick (if there's two segments) because the contour ring will traverse back to the second segment (since both segments
+        # are part of the same contour because their containing square represents a thin connecting region between two larger islands of the ring).
         # We then find the adjacent square to the segment's end (since a segment ends in the middle of a side of the square we can find the adjacent square).
         # We then find the segment in the adjacent square that starts (or ends) at the that point (the previous segment end). The adjacent
         # square may contain two segments in which case we need to find the correct segment (that continues the previous segment).
@@ -990,7 +1036,7 @@ class ContinentContouring(object):
         #
 
         #
-        # Starting at the first segment, follow the segments in a loop until they return to the first segment (thus forming a contour polygon).
+        # Starting at the first segment, follow the segments in a loop until they return to the first segment (thus forming a contour ring).
         #
         latitude_index, longitude_index = first_segment_lat_lon_indices
         prev_segment_end = None
@@ -1129,5 +1175,5 @@ class ContinentContouring(object):
                     # Break out of current contour loop (we've completed the contour).
                     break
 
-        # Generate a contour polygon from the current loop of contour points.
-        return pygplates.PolygonOnSphere(contour_points)
+        # Return the ring of contour points.
+        return contour_points
