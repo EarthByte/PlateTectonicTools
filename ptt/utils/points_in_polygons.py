@@ -185,33 +185,53 @@ def _visit_spatial_tree_node(
         polygon_proxies_containing_points,
         all_polygons):
     
-    # See if the current quad tree node's bounding polygon overlaps any polygons.
+    # See if the current quad tree node's bounding region overlaps any polygons.
     overlapping_polygons_and_proxies = []
     for polygon, polygon_proxy in parent_overlapping_polygons_and_proxies:
         
+        # If the current polygon contains interior rings/holes then use the *small circle* bounding the quad tree node.
+        # Because if we had instead used the *polygon* bounding the quad tree node then it's possible that its outline
+        # lies entirely inside the current polygon *and* surrounds one of its interior rings/holes. And this means we
+        # cannot fill the node (like we could if the current polygon did not contain any holes). So instead we use
+        # the *small circle* node bounds (which does not exhibit this problem). We could instead have still used the
+        # bounding polygon and detected if any interior holes are contained in it, but using the *small circle* is easier.
+        if polygon.get_number_of_interior_rings() > 0:
+            # The bounding region is the centre of small circle and the bounding radius.
+            node_bounding_geometry, node_bounding_distance = node.get_bounding_circle()
+            # Any point inside the bounding region - we choose the small circle centre.
+            any_point_in_node_bounds = node_bounding_geometry
+        else:
+            # The bounding region is the bounding polygon.
+            node_bounding_geometry = node.get_bounding_polygon()
+            # Since the bounding region is a polygon we don't need a bounding distance (ie, it's just zero).
+            #
+            # Note: PyGPlates version 0.15 fixed an issue in GeometryOnSphere.distance() where very small distances (approx <= 1e-6)
+            # should have been set to zero (to indicate an intersection) but were not. So we'll assume pyGPlates version 0.14 or less
+            # test for small distances instead of zero (this also works for version 0.15 and above). Our small distance is the threshold
+            # distance above. It's possible both polygons don't really overlap but are just very close, but that's OK since
+            # we're being conservative in that we're looking for possibilities of points being in polygons.
+            node_bounding_distance = 1e-4
+            # Any point inside the bounding region - we choose the first vertex of the bounding polygon (consisting of just an exterior ring).
+            any_point_in_node_bounds = node_bounding_geometry[0]
+        
         # See if quad tree node and current polygon overlap.
         polygon_node_overlap_distance = pygplates.GeometryOnSphere.distance(
-                node.get_bounding_polygon(),
+                node_bounding_geometry,
                 polygon,
-                1e-4, # Anything smaller than this is considered zero distance (intersection).
+                node_bounding_distance, # Anything smaller than this is considered an intersection.
                 geometry1_is_solid = True,
                 geometry2_is_solid = True)
-        # Note: PyGPlates revision 15 fixed an issue in GeometryOnSphere.distance() where very small distances (approx <= 1e-6)
-        # should have been set to zero (to indicate an intersection) but were not. So we'll assume pyGPlates revision 14 or less
-        # test for small distances instead of zero (this also works for revision 15 and above). Our small distance is the threshold
-        # distance above. It's possible both polygons don't really overlap but are just very close, but that's OK since
-        # we're being conservative in that we're looking for possibilities of points being in polygons.
         if polygon_node_overlap_distance is not None:
-            
-            # See if quad tree node is contained completely inside polygon.
-            # We test this by ensuring the outlines of both polygons are not too close (ie, don't touch) and if they don't touch then
-            # testing if any point on node bounding polygon (we use first point) is inside polygon.
+            # See if quad tree node is contained completely inside the current polygon.
+            #
+            # We test this by ensuring the outline of the current polygon and the node bounding region (small circle or polygon) are not too close
+            # (ie, don't touch) and if they don't touch then testing if any point on node bounding region is inside the current polygon.
             node_to_polygon_distance = pygplates.GeometryOnSphere.distance(
-                    node.get_bounding_polygon(),
+                    node_bounding_geometry,
                     polygon,
-                    1e-4) # Anything smaller than this is considered zero distance (intersection).
+                    node_bounding_distance) # Anything smaller than this is considered an intersection.
             if (node_to_polygon_distance is None and
-                polygon.is_point_in_polygon(node.get_bounding_polygon()[0])):
+                polygon.is_point_in_polygon(any_point_in_node_bounds)):
                 
                 # Recursively fill the entire quad sub-tree as inside current polygon.
                 _fill_spatial_tree_node_inside_polygon(node, polygon_proxy, polygon_proxies_containing_points, all_polygons)
