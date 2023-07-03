@@ -45,30 +45,44 @@ class ContouredContinent(object):
     def __init__(self):
         self._polygons_including_continent = []
         self._polygons_excluding_continent = []
+        self._polylines = []
     
 
-    def _add_landmass(self, landmass_polygon, landmass_polygon_interior_contains_continent, contour_polylines):
+    def _add_continent(self, continent_polygon):
         """
-        Add a landmass to this contoured continent.
+        Add a continent (landmass) polygon to this contoured continent.
 
-        This is a polygon representing the landmass region/area, and one or more polylines representing the landmass boundary(s).
-        
-        If 'landmass_polygon_interior_contains_continent' is *true* then the interior of the polygon represents continental crust.
-        In this case the polygon can have interior rings (holes) which represent oceanic crust.
-        And it's also possible for a landmass polygon to be inside the interior hole of another landmass polygon, and so on.
-        For example, an continental island inside an ocean basin that, in turn, is inside a larger continent.
-        
-        If 'landmass_polygon_interior_contains_continent' is *false* then the landmass is actually a continent that covers
-        the entire globe except for a few oceanic holes. And the specified 'polygon' is actually one of those oceanic holes.
-        This is a special case because you can't have a single global polygon with only interior holes (and no exterior ring).
-        So intead we allow for multiple exterior ring polygons to represent these oceanic holes (and treat them specially).
+        This is a polygon whose interior represents continental crust.
+        And it can have interior rings (holes) which represent oceanic crust.
+
+        Note that it's possible for a continent polygon to be inside the interior hole of another continent polygon.
+        For example, a continental island inside an ocean basin that, in turn, is inside a larger continent.
+        It's also possible for a continent polygon to be inside an ocean polygon.
+        For example, a continental island inside an ocean basin (that itself has no continent containing it).
         """
-        if landmass_polygon_interior_contains_continent:
-            self._polygons_including_continent.append(landmass_polygon)
-        else:
-            self._polygons_excluding_continent.append(landmass_polygon)
-        
-        self._polylines = contour_polylines
+        self._polygons_including_continent.append(continent_polygon)
+    
+
+    def _add_ocean(self, ocean_polygon):
+        """
+        Add an ocean polygon to this contoured continent.
+
+        This is a polygon whose interior represents oceanic crust, but it has no continent that contains it.
+        Unlike a continent polygon, an ocean polygon cannot have interior rings (holes). If there are any continent islands
+        inside this ocean then they should be added as a separate (continent) polygons.
+
+        Usually only a single continent polygon is needed to define a landmass.
+        However, one or more ocean polygons can instead be needed if the landmass is actually a landmass that covers the entire globe
+        except for a few oceanic holes. In which case the specified ocean polygon is actually one of those oceanic holes.
+        This is a special case because you can't have a single global continent polygon with only interior holes (and no exterior ring).
+        So intead we allow for multiple ocean polygons that represent these oceanic holes (and treat them specially).
+        """
+        self._polygons_excluding_continent.append(ocean_polygon)
+    
+
+    def _add_contours(self, contour_polylines):
+        """Add polyline contours representing boundaries of continental crust."""
+        self._polylines.extend(contour_polylines)
 
 
     def get_contours(self):
@@ -182,7 +196,7 @@ class ContinentContouring(object):
             # The grid spacing (in degrees) between points in the grid used for contouring/aggregrating blocks of continental polygons.
             continent_contouring_point_spacing_degrees,
 
-            # Optional parameter specifying area threshold (in square radians) for contoured continents.
+            # Optional parameter specifying a minimum area threshold (in square radians) for including contoured continents.
             #
             # Contoured continents with area smaller than this threshold will be excluded.
             # If this parameter is not specified then no area threshold is applied.
@@ -212,7 +226,7 @@ class ContinentContouring(object):
             #       Also 1.0 degree is approximately 110 km.
             continent_contouring_buffer_and_gap_distance_radians = None,
 
-            # Optional parameter specifying area threshold (in square radians) when creating continent contours.
+            # Optional parameter specifying a minimum area threshold (in square radians) for contours that exclude continental crust.
             #
             # Polygon contours that exclude continental crust and have an area smaller than this threshold will be excluded
             # (meaning they will now *include* continental crust, thus removing the contour).
@@ -953,60 +967,61 @@ class ContinentContouring(object):
         Create a ContouredContinent from the specified contours.
         """
 
+        contoured_continent = ContouredContinent()
+
         # For each contour create a ring (a polygon with only an exterior ring).
         contour_rings = [pygplates.PolygonOnSphere(contour) for contour in contours]
 
-        def _insert_contour_into_a_landmass_polygon(contour_ring, landmass_polygons):
-            # See if new contour ring contains, or is contained by, any of the existing landmass polygons.
-            for polygon_index, polygon in enumerate(landmass_polygons):
-                exterior_ring, interior_rings = polygon
-                # See if exterior ring *contains* the new contour ring (arbitrarily choose first point on ring).
-                if exterior_ring.is_point_in_polygon(contour_ring[0]):
-                    # Add the new contour ring as an interior ring.
-                    interior_rings.append(contour_ring)
-                    return
-                # See if the new contour ring *contains* the exterior ring (arbitrarily choose first point on ring).
-                elif contour_ring.is_point_in_polygon(exterior_ring[0]):
-                    # Current exterior ring shouldn't have any interior rings - the contouring algorithm should guarantee this.
-                    if interior_rings:
-                        raise AssertionError("Cannot make polygon an interior ring of another polygon if it has an interior ring")
-                    # The new contour ring becomes an exterior ring and the current exterior ring becomes an interior ring.
-                    new_landmass_polygon = contour_ring, [exterior_ring]  # exterior ring, list of interior rings
-                    landmass_polygons[polygon_index] = new_landmass_polygon
-                    return
-            
-            # The new contour ring is not inside (and also does not contain) any of the existing landmass polygons.
-            # So create a new landmass polygon.
-            new_landmass_polygon = contour_ring, []  # exterior ring, list of interior rings
-            landmass_polygons.append(new_landmass_polygon)
-
-        # Arrange the contour rings into a landmass polygon.
+        # Also create a polyline for each contour.
         #
-        # Note that we can get multiple landmass polygons if there is no landmass that is an exterior ring.
+        # Note: Creating polylines directly from polygons (with no interior rings) ensures the first and last points in each polyline are the same.
+        contour_polylines = [pygplates.PolylineOnSphere(contour_ring) for contour_ring in contour_rings]
+        # Add the contours.
+        contoured_continent._add_contours(contour_polylines)
+
+        # Arrange the contour rings into those that *include* and those that *exclude* continent.
+        #
+        # Note that we can get multiple ocean polygons if there is no contour ring that includes continent.
         # In this case the continent covers the entire globe except for a few oceanic holes.
         # However you can't have a single polygon with only interior holes (and no exterior ring).
-        # So intead we allow for multiple exterior ring polygons to represent these holes (and treat this as a special case).
-        landmass_polygons = []
+        # So intead we allow for multiple ocean polygons to represent these holes (and treat this as a special case).
+        contour_rings_including_continent = []
+        contour_rings_excluding_continent = []
         for contour_ring in contour_rings:
-            _insert_contour_into_a_landmass_polygon(contour_ring, landmass_polygons)
+            # A point inside the continent might actually be outside the current contour ring.
+            contour_ring_interior_contains_continent = contour_ring.is_point_in_polygon(any_point_inside_contoured_continent)
+            if contour_ring_interior_contains_continent:
+                contour_rings_including_continent.append(contour_ring)
+            else:
+                contour_rings_excluding_continent.append(contour_ring)
         
-        contoured_continent = ContouredContinent()
-        
-        # Add each landmass polygon to the contoured continent.
-        for polygon in landmass_polygons:
-            # Convert rings (lists of points) into an actual polygon.
-            exterior_ring, interior_rings = polygon
-            polygon = pygplates.PolygonOnSphere(exterior_ring, interior_rings)
-            # A point inside the continent might actually be outside the current landmass polygon.
-            # So determine whether this is the case or not (since a contoured continent needs to know this when it's asked to do point-in-polygon tests).
-            polygon_interior_contains_continent = polygon.is_point_in_polygon(any_point_inside_contoured_continent)
-            # If the polygon *excludes* continental crust then the contouring algorithm should ensure it doesn't have any interior rings (which should be unreachable).
-            if (not polygon_interior_contains_continent) and interior_rings:
-                raise AssertionError("Contour polygons excluding continental crust should not have interior rings")
-            # Add the polygon, and its contours (rings) as polylines.
-            # Note: Converting contours directly from polygons (with no interior rings) ensures the first and last points in each polyline are the same.
-            contours_as_polylines = [pygplates.PolylineOnSphere(contour_ring) for contour_ring in contour_rings]
-            contoured_continent._add_landmass(polygon, polygon_interior_contains_continent, contours_as_polylines)
+        # We should have either:
+        #
+        # 1) a single contour ring *including* continent and *zero or more* contour rings *excluding* continent, or
+        # 2) no contour ring *including* continent and *one or more* contour rings *excluding* continent.
+        #
+        # For the case (1) we have a *single* polygon with zero or more interior rings. And it *includes* continent.
+        # For the case (2) we have a *multiple* polygons, each with no interior rings. And they *exclude* continent with
+        # the rest of the globe *including* continent.
+        #
+        # There's actually a third special case when there's no oceanic crust, just a single landmass covering the entire globe.
+        # In that case there are no contours (and no continent or ocean polygons).
+        if len(contour_rings_including_continent) == 1:
+            # One continent polygon.
+            continent_exterior_ring = contour_rings_including_continent[0]
+            ocean_interior_rings = contour_rings_excluding_continent
+            continent_polygon = pygplates.PolygonOnSphere(continent_exterior_ring, ocean_interior_rings)
+            # Add the continent polygon.
+            contoured_continent._add_continent(continent_polygon)
+        elif len(contour_rings_including_continent) == 0:
+            # Zero or more ocean polygons (each with no interior rings).
+            # Note: We only have *zero* ocean polygons for the special case of a single landmass covering the entire globe.
+            for ocean_exterior_ring in contour_rings_excluding_continent:
+                ocean_polygon = pygplates.PolygonOnSphere(ocean_exterior_ring)
+                # Add an ocean polygon.
+                contoured_continent._add_ocean(ocean_polygon)
+        else:  # len(contour_rings_including_continent) >= 2
+            raise AssertionError("A single landmass cannot have multiple polygons that include continent")
 
         return contoured_continent
 
