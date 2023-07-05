@@ -1057,84 +1057,121 @@ class ContinentContouring(object):
         #
 
         # Records the segments contained by all squares.
-        marching_squares = []
+        marching_squares = [(None, None)] * (num_latitude_intervals * num_longitude_intervals)  # squares contain no segments by default
         # Records the lat/lon index of only those squares containing one (or two) segments.
         marching_squares_containing_segments = set()
+
+        # Mark those points *inside* any landmass as requiring a visit.
+        # We also need to remove them once they've been visited.
+        #
+        # Optimisation: The scattered code below (referencing this variable) is optimised for speed since it is a hotspot in the contouring algorithm.
+        #               It's a replacement for the following simpler (but slower) code:
+        #
+        #               for latitude_index in range(num_latitudes):
+        #                   for longitude_index in range(num_longitudes):
+        #                       if points_inside_continent[latitude_index, longitude_index]:
+        #                           points_inside_all_landmasses_to_visit.add((latitude_index, longitude_index))
+        points_inside_all_landmasses_to_visit = set()
+
+        bottom_squares_inside_continent = points_inside_continent[0, :]  # whether first row of latitude points are inside continent
         for latitude_index in range(num_latitude_intervals):
+            top_squares_inside_continent = points_inside_continent[latitude_index + 1, :]  # whether next row of latitude points are inside continent
+
+            # See if points on the left of the first square (at the current latitude) are inside continent.
+            bottom_left_square_inside_continent = bottom_squares_inside_continent[0]
+            top_left_square_inside_continent = top_squares_inside_continent[0]
             for longitude_index in range(num_longitude_intervals):
 
-                # See which 4 points of the current square are inside a contour.
-                bottom_left_square_inside_contour = points_inside_contour[latitude_index, longitude_index]
-                bottom_right_square_inside_contour = points_inside_contour[latitude_index, longitude_index + 1]
-                top_left_square_inside_contour = points_inside_contour[latitude_index + 1, longitude_index]
-                top_right_square_inside_contour = points_inside_contour[latitude_index + 1, longitude_index + 1]
+                # See if points on the right of the current square are inside continent.
+                #
+                # Note: These will become the left points in the next loop iteration.
+                bottom_right_square_inside_continent = bottom_squares_inside_continent[longitude_index + 1]
+                top_right_square_inside_continent = top_squares_inside_continent[longitude_index + 1]
+
+                # Mark the point in the bottom-left of square (and that is *inside* any landmass) as requiring a visit.
+                if bottom_left_square_inside_continent:
+                    points_inside_all_landmasses_to_visit.add((latitude_index, longitude_index))
 
                 # Handle the 16 cases of segments in a square.
                 #
                 # Store 2 segments (most of the time only 1 is needed).
                 # Each segment stores a segment start and end identifier.
-                if bottom_left_square_inside_contour:
-                    if bottom_right_square_inside_contour:
-                        if top_left_square_inside_contour:
-                            if top_right_square_inside_contour:
-                                segments_in_square = None, None
+                if bottom_left_square_inside_continent:
+                    if bottom_right_square_inside_continent:
+                        if top_left_square_inside_continent:
+                            if top_right_square_inside_continent:
+                                # Current square doesn't contain a segment, so skip to the next square.
+                                segments_in_square = None
                             else:
                                 segments_in_square = (2,3), None
                         else:
-                            if top_right_square_inside_contour:
+                            if top_right_square_inside_continent:
                                 segments_in_square = (1,2), None
                             else:
                                 segments_in_square = (1,3), None
                     else:
-                        if top_left_square_inside_contour:
-                            if top_right_square_inside_contour:
+                        if top_left_square_inside_continent:
+                            if top_right_square_inside_continent:
                                 segments_in_square = (0,3), None
                             else:
                                 segments_in_square = (0,2), None
                         else:
-                            if top_right_square_inside_contour:
+                            if top_right_square_inside_continent:
                                 # Choose 2 segments that *do* join two islands.
                                 segments_in_square = (0,3), (1,2)
                             else:
                                 segments_in_square = (0,1), None
                 else:
-                    if bottom_right_square_inside_contour:
-                        if top_left_square_inside_contour:
-                            if top_right_square_inside_contour:
+                    if bottom_right_square_inside_continent:
+                        if top_left_square_inside_continent:
+                            if top_right_square_inside_continent:
                                 segments_in_square = (0,1), None
                             else:
                                 # Choose 2 segments that *do* join two islands.
                                 segments_in_square = (0,1), (2,3)
                         else:
-                            if top_right_square_inside_contour:
+                            if top_right_square_inside_continent:
                                 segments_in_square = (0,2), None
                             else:
                                 segments_in_square = (0,3), None
                     else:
-                        if top_left_square_inside_contour:
-                            if top_right_square_inside_contour:
+                        if top_left_square_inside_continent:
+                            if top_right_square_inside_continent:
                                 segments_in_square = (1,3), None
                             else:
                                 segments_in_square = (1,2), None
                         else:
-                            if top_right_square_inside_contour:
+                            if top_right_square_inside_continent:
                                 segments_in_square = (2,3), None
                             else:
-                                segments_in_square = None, None
+                                # Current square doesn't contain a segment, so skip to the next square.
+                                segments_in_square = None
                 
-                # If current square contains a segment then record that.
-                if segments_in_square[0]:
+                # If the current square contains a segment then record that.
+                if segments_in_square is not None:
+                    marching_squares[latitude_index * num_longitude_intervals + longitude_index] = segments_in_square
                     marching_squares_containing_segments.add((latitude_index, longitude_index))
 
-                marching_squares.append(segments_in_square)
+                # The next square is to the right, so the right side of current square becomes left side of next square.
+                #
+                # This is an optimisation since this loop is a hotspot in the contouring algorithm.
+                # It halves the number of point-inside-contour lookups we need to do.
+                bottom_left_square_inside_continent = bottom_right_square_inside_continent
+                top_left_square_inside_continent = top_right_square_inside_continent
+
+            # Mark the point in the last longitude column (and that is *inside* any landmass) as requiring a visit.
+            if bottom_right_square_inside_continent:
+                points_inside_all_landmasses_to_visit.add((latitude_index, num_longitudes - 1))
+
+            # In the next loop iteration the bottom row of latitude points (inside continent) will be the current top row.
+            bottom_squares_inside_continent = top_squares_inside_continent
+
+        # Mark points in the last latitude row (and that are *inside* any landmass) as requiring a visit.
+        for longitude_index in range(num_longitudes):
+            if top_squares_inside_continent[longitude_index]:
+                points_inside_all_landmasses_to_visit.add((num_latitudes - 1, longitude_index))
         
-        # Mark those points *inside* any contour as requiring a visit.
-        # We also need to remove them once they've been visited.
-        points_inside_all_contoured_continents_to_visit = set()
-        for latitude_index in range(num_latitudes):
-            for longitude_index in range(num_longitudes):
-                if points_inside_contour[latitude_index, longitude_index]:
-                    points_inside_all_contoured_continents_to_visit.add((latitude_index, longitude_index))
+        #time2 = time.time()
         
         # Return early if none of the grid points are inside continent.
         if not points_inside_all_landmasses_to_visit:
