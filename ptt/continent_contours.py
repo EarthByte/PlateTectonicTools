@@ -393,8 +393,11 @@ class ContinentContouring(object):
         # So a leaf node at subdivision depth 'D' is '(n/2) / 2^D' = 'n / 2^(D+1)'. The number of points is the square of that 'N = '(n / 2^(D+1)) ^ 2'.
         # Rearranging that gives the subdivision depth 'D' in terms of the number of points we'd like in a deepest (leaf) node N:
         #   D = log2(n / sqrt(N)) - 1
-        max_num_points_per_spatial_tree_node = 32  # N
+        max_num_points_per_spatial_tree_node = 64  # N
         points_spatial_tree_subdivision_depth = math.ceil(math.log(self.contouring_grid_num_latitudes / math.sqrt(max_num_points_per_spatial_tree_node), 2) - 1)  # D
+        # We won't exceed 6 subdivision levels because it starts to use a lot of memory.
+        # And 6 is still higher than the default of 4 in PointsSpatialTree.
+        points_spatial_tree_subdivision_depth = min(6, points_spatial_tree_subdivision_depth)
         self.contouring_points_spatial_tree = points_spatial_tree.PointsSpatialTree(self.contouring_points, points_spatial_tree_subdivision_depth)
     
     
