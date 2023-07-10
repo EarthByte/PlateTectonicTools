@@ -69,7 +69,7 @@ The current contouring algorithm implements a landmass flood-fill to find all co
 *	In some cases (particularly for 0-130Ma) the polygons are so large that the inside/outside region of each contour polygon becomes swapped.
 *	Clipping at the dateline (with a 2D approach) causes perimeters to be larger than they should be.
 
-Essentially you can create a `ContinentContouring` object using rotation files, the continent features (polygons), a contour resolution, a gap threshold, an area threshold and an age range. And then ask it to reconstruct the polygons to an `age` and contour them into continents:
+Essentially you can create a `ContinentContouring` object using rotation files, some continent/craton features (polygons), a contour resolution to determine how finely tessellated the contour outlines should be, a buffer/gap threshold to expand continents outward, and two area thresholds to separately exclude small continental islands and small oceanic islands. It will then reconstruct the polygons to an `age` and contour them into continents. This will output the continent contours (as *polyline* continental-oceanic boundaries) and/or continent masks (a 2D NumPy boolean array of continental crust at each age):
 
 ```
 from ptt.continent_contours import ContinentContouring
@@ -77,10 +77,9 @@ from ptt.continent_contours import ContinentContouring
 continent_contouring = ContinentContouring(...)
 ...
 contoured_continents = continent_contouring.get_contoured_continents(age)
+continent_mask = continent_contouring.get_continent_mask(age)
 ```
 
-Where the returned `contoured_continents` is a list of `ContouredContinent`. These are all the contoured continents on the globe at the specified age. Each of these can be used to query a continent perimeter, area and whether arbitrary points are contained inside it. If you want to query distance to the continent you can first retrieve its polygons and then query distance to those (each contoured continent is actually one or more pyGPlates polygons representing its boundary between land and ocean, eg, an exterior polygon with interior holes).
-
-*A note on the input parameters mentioned above*... The contour resolution determines how finely tessellated the contour outlines are. The gap threshold controls how close the reconstructed polygons can be to each other to be joined together – this helps remove narrow channels/gaps, however it also has the effect of expanding the continent outwards. The area threshold excludes any polygon boundary (of a contoured continent) with area below the threshold - remember that a contoured continent can contain more than one boundary - so for example if a hole inside a continent has an area below the threshold then the hole disappears.
+The returned `contoured_continents` is a list of `ContouredContinent`. And `continent_mask` is a 2D NumPy boolean array of continental crust (that can be converted to floating-point `0.0` and `1.0` values using `continent_mask.astype('float')`). The contoured continents can be used to query a continent perimeter, a continent area and whether arbitrary points are contained inside a continent. If you want to query distance to the continent-ocean boundaries you can first retrieve the contours (which are *polylines*) and then query distance to those.
 
 > Documentation for other modules is coming soon...
