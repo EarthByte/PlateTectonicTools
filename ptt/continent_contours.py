@@ -162,7 +162,7 @@ class ContouredContinent(object):
     def get_perimeter(self):
         """Sum of the length of the contour boundaries of this contoured continent (in radians)."""
         return math.fsum(polygon.get_arc_length() for polygon in
-                         (self.self._polygons_including_continent + self.self._polygons_excluding_continent))
+                         (self._polygons_including_continent + self._polygons_excluding_continent))
 
 
     def get_area(self):
