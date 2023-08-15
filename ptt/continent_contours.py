@@ -33,8 +33,8 @@ import time
 #############################################################################################################
 # Calculate continent contours, and fragmentation index (global perimeter-to-area ratio), at various times.
 #
-# TODO: Replace the internal uniform lat/lon sampling with a sampling that’s uniform across the sphere
-#       (so that the contour resolution doesn’t favour contours near the North/South poles).
+# TODO: Replace the internal uniform lat/lon sampling with a sampling that's uniform across the sphere
+#       (so that the contour resolution doesn't favour contours near the North/South poles).
 #############################################################################################################
    
 
