@@ -49,10 +49,6 @@ def _read_feature_metadata(feature_data, line):
     name = line_data[0].strip().lower() # Convert to lower case.
     value = line_data[1].strip()
     
-    # Convert 'unicode' back to UTF8-encoded 'str' since
-    # pyGPlates revision 12 (and below) cannot accept 'unicode'.
-    value = value.encode('utf-8')
-    
     # See if specifying feature type or a single feature property.
     if name == 'featuretype':
         feature_data.type = pygplates.FeatureType.create_gpml(value)
@@ -455,16 +451,7 @@ if __name__ == "__main__":
                 '"10 20 15 80 48" would have longitude=10, latitude=20, SpreadingRate=15, '
                 'SpreadingDirection=80 and SpreadingAsymmetry=48.')
     
-    def unicode_filename(value_string):
-        try:
-            # Filename uses the system encoding - decode from 'str' to 'unicode'.
-            filename = value_string.decode(sys.getfilesystemencoding())
-        except UnicodeDecodeError:
-            raise argparse.ArgumentTypeError("Unable to convert filename %s to unicode" % value_string)
-        
-        return filename
-    
-    parser.add_argument('input_filenames', type=unicode_filename, nargs='+',
+    parser.add_argument('input_filenames', type=str, nargs='+',
             metavar='input_filename',
             help='The ascii input files containing the geometry in latitude/longitude coordinates.')
     
@@ -503,10 +490,6 @@ if __name__ == "__main__":
         input_filename = args.input_filenames[feature_collection_index]
         filename_root, filename_ext = os.path.splitext(input_filename)
         output_filename = ''.join((filename_root, '.', args.output_filename_extension))
-        
-        # Convert output filename from 'unicode' to UTF8-encoded 'str' since pyGPlates versions
-        # prior to revision 13 cannot accept 'unicode' strings.
-        output_filename = output_filename.encode('utf-8')
         
         # Write the output file.
         pygplates.FeatureCollection(imported_geometry_feature_collection).write(output_filename)
