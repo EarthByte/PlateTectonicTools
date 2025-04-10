@@ -22,7 +22,6 @@ It is primarily built on top of the pyGPlates Python library.
 
 """
 
-from .documentation import install_documentation
 from . import (
     cleanup_topologies,
     continent_contours,

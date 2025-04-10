@@ -1,7 +1,4 @@
 ## To install locally: python -m pip install .
-## (If there are problems with installation of the documentation, it may be that
-##  the egg file is out of sync and will need to be manually deleted - see error message
-##  for details of the corrupted zip file. )
 ##
 ## To push a version through to pip.
 ##  - Make sure it installs correctly locally as above
