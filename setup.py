@@ -14,7 +14,7 @@ from setuptools import setup
 from os import path
 
 ## in development set version to none and ...
-PYPI_VERSION = "0.5.0.dev4"  # setting to a valid dev version (PEP440 instead of git version) otherwise 'pip install -e' errors out
+PYPI_VERSION = "0.5.0.dev5"  # setting to a valid dev version (PEP440 instead of git version) otherwise 'pip install -e' errors out
 
 # Return the git revision as a string (from numpy)
 def git_version():
@@ -61,7 +61,11 @@ if __name__ == "__main__":
           url               = "https://github.com/EarthByte/PlateTectonicTools",
           version           = PYPI_VERSION,
           description       = "Python tools for plate tectonic research",
-          install_requires  = ['numpy'],
+          install_requires  = [
+              'numpy',
+              'scipy',
+              'pygplates>=1.0.0',
+          ],
           python_requires   = '>=2.7',
           packages          = ['ptt', 'ptt.utils'],
           package_data      = {'ptt': ['Examples/notebooks/*.ipynb',

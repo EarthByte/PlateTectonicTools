@@ -6,11 +6,11 @@ This repository contains the Python package `ptt` (short for Plate Tectonic Tool
 
 ## Please use GPlately instead
 
-This repository is now a part of [GPlately](https://github.com/GPlates/gplately/), so please use that instead.
+This repository is now a part of [GPlately](https://github.com/GPlates/gplately/), so please use the `gplately` Python package instead.
 
 For example, after installing GPlately, replace `import ptt` with `import gplately.ptt` in your Python code.
 
-> Note: This repository is equivalent to the PlateTectonicTools (`gplately.ptt`) in GPlately version `2.0`.
+> Note: This repository is equivalent to the PlateTectonicTools (`gplately.ptt`) embedded in GPlately version `2.0`.
 
 ## Installation
 

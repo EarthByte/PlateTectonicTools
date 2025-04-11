@@ -27,7 +27,7 @@ requirements:
     - setuptools
     - numpy
     - python >={{ python_min }}
-    - pygplates
+    - pygplates >=1.0.0
     - scipy
     - cartopy
 
