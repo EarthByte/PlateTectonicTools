@@ -1,5 +1,5 @@
 #
-#    Copyright (C) 2024 The University of Sydney, Australia
+#    Copyright (C) 2024-2025 The University of Sydney, Australia
 #
 #    This program is free software; you can redistribute it and/or modify it under
 #    the terms of the GNU General Public License, version 2, as published by
@@ -15,9 +15,9 @@
 #    51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
-""""ptt" stands for Plate Tectonics Tools.
+"""The "ptt" stands for Plate Tectonics Tools.
 
-This "ptt" module provides a collection of common plate tectonic functionality that researchers can use in their workflows. 
+This "ptt" module provides a collection of common plate tectonic functionality that researchers can use in their workflows.
 It is primarily built on top of the pyGPlates Python library.
 
 """
